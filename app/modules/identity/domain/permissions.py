@@ -27,6 +27,12 @@ class Permissions:
     LOCATION_UPDATE = "location:update"
     LOCATION_DELETE = "location:delete"
 
+    SHIPMENT_READ = "shipment:read"
+    SHIPMENT_CREATE = "shipment:create"
+    SHIPMENT_UPDATE = "shipment:update"
+    SHIPMENT_DELETE = "shipment:delete"
+    SHIPMENT_TRANSITION = "shipment:transition"
+
 
 PERMISSION_CATALOG = (
     PermissionDefinition(
@@ -84,5 +90,25 @@ PERMISSION_CATALOG = (
     PermissionDefinition(
         code=Permissions.LOCATION_DELETE,
         description="Delete locations",
+    ),
+    PermissionDefinition(
+        code=Permissions.SHIPMENT_READ,
+        description="Read shipments",
+    ),
+    PermissionDefinition(
+        code=Permissions.SHIPMENT_CREATE,
+        description="Create shipments",
+    ),
+    PermissionDefinition(
+        code=Permissions.SHIPMENT_UPDATE,
+        description="Update shipments",
+    ),
+    PermissionDefinition(
+        code=Permissions.SHIPMENT_DELETE,
+        description="Delete shipments",
+    ),
+    PermissionDefinition(
+        code=Permissions.SHIPMENT_TRANSITION,
+        description="Transition shipment status",
     ),
 )
