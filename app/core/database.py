@@ -6,16 +6,11 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import get_settings
 
-
-class Base(DeclarativeBase):
-    pass
-
-
 settings = get_settings()
+
 engine: AsyncEngine = create_async_engine(
     settings.database_url,
     pool_pre_ping=True,
@@ -24,6 +19,7 @@ engine: AsyncEngine = create_async_engine(
     pool_timeout=settings.db_pool_timeout_seconds,
     pool_recycle=settings.db_pool_recycle_seconds,
 )
+
 SessionFactory = async_sessionmaker(
     bind=engine,
     class_=AsyncSession,

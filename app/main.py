@@ -24,7 +24,9 @@ def create_app() -> FastAPI:
         debug=settings.debug,
         lifespan=lifespan,
     )
+
     application.include_router(api_router)
+
     return application
 
 

@@ -1,0 +1,386 @@
+"""create identity foundation
+
+Revision ID: d2362075716d
+Revises:
+Create Date: 2026-08-23 08:23:26.755150
+"""
+
+from collections.abc import Sequence
+
+from alembic import op
+import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
+
+revision: str = "d2362075716d"
+down_revision: str | Sequence[str] | None = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
+
+
+def upgrade() -> None:
+    op.execute("CREATE EXTENSION IF NOT EXISTS citext")
+
+    op.create_table(
+        "permissions",
+        sa.Column(
+            "code",
+            sa.String(length=150),
+            nullable=False,
+        ),
+        sa.Column(
+            "description",
+            sa.String(length=255),
+            nullable=True,
+        ),
+        sa.Column(
+            "id",
+            sa.UUID(),
+            server_default=sa.text("uuidv7()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.PrimaryKeyConstraint(
+            "id",
+            name=op.f("pk_permissions"),
+        ),
+        sa.UniqueConstraint(
+            "code",
+            name=op.f("uq_permissions_code"),
+        ),
+    )
+
+    op.create_table(
+        "roles",
+        sa.Column(
+            "name",
+            sa.String(length=100),
+            nullable=False,
+        ),
+        sa.Column(
+            "description",
+            sa.String(length=255),
+            nullable=True,
+        ),
+        sa.Column(
+            "id",
+            sa.UUID(),
+            server_default=sa.text("uuidv7()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.PrimaryKeyConstraint(
+            "id",
+            name=op.f("pk_roles"),
+        ),
+        sa.UniqueConstraint(
+            "name",
+            name=op.f("uq_roles_name"),
+        ),
+    )
+
+    op.create_table(
+        "tenants",
+        sa.Column(
+            "name",
+            sa.String(length=200),
+            nullable=False,
+        ),
+        sa.Column(
+            "slug",
+            sa.String(length=100),
+            nullable=False,
+        ),
+        sa.Column(
+            "status",
+            sa.Enum(
+                "active",
+                "suspended",
+                name="tenant_status",
+            ),
+            server_default="active",
+            nullable=False,
+        ),
+        sa.Column(
+            "id",
+            sa.UUID(),
+            server_default=sa.text("uuidv7()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "deleted_at",
+            sa.DateTime(timezone=True),
+            nullable=True,
+        ),
+        sa.PrimaryKeyConstraint(
+            "id",
+            name=op.f("pk_tenants"),
+        ),
+        sa.UniqueConstraint(
+            "slug",
+            name=op.f("uq_tenants_slug"),
+        ),
+    )
+
+    op.create_table(
+        "users",
+        sa.Column(
+            "email",
+            postgresql.CITEXT(),
+            nullable=False,
+        ),
+        sa.Column(
+            "password_hash",
+            sa.String(length=255),
+            nullable=False,
+        ),
+        sa.Column(
+            "first_name",
+            sa.String(length=100),
+            nullable=False,
+        ),
+        sa.Column(
+            "last_name",
+            sa.String(length=100),
+            nullable=False,
+        ),
+        sa.Column(
+            "is_active",
+            sa.Boolean(),
+            server_default=sa.text("true"),
+            nullable=False,
+        ),
+        sa.Column(
+            "id",
+            sa.UUID(),
+            server_default=sa.text("uuidv7()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "deleted_at",
+            sa.DateTime(timezone=True),
+            nullable=True,
+        ),
+        sa.PrimaryKeyConstraint(
+            "id",
+            name=op.f("pk_users"),
+        ),
+        sa.UniqueConstraint(
+            "email",
+            name=op.f("uq_users_email"),
+        ),
+    )
+
+    op.create_table(
+        "memberships",
+        sa.Column(
+            "tenant_id",
+            sa.UUID(),
+            nullable=False,
+        ),
+        sa.Column(
+            "user_id",
+            sa.UUID(),
+            nullable=False,
+        ),
+        sa.Column(
+            "role_id",
+            sa.UUID(),
+            nullable=False,
+        ),
+        sa.Column(
+            "status",
+            sa.Enum(
+                "active",
+                "suspended",
+                name="membership_status",
+            ),
+            server_default="active",
+            nullable=False,
+        ),
+        sa.Column(
+            "id",
+            sa.UUID(),
+            server_default=sa.text("uuidv7()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "deleted_at",
+            sa.DateTime(timezone=True),
+            nullable=True,
+        ),
+        sa.ForeignKeyConstraint(
+            ["role_id"],
+            ["roles.id"],
+            name=op.f("fk_memberships_role_id_roles"),
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["tenant_id"],
+            ["tenants.id"],
+            name=op.f("fk_memberships_tenant_id_tenants"),
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["user_id"],
+            ["users.id"],
+            name=op.f("fk_memberships_user_id_users"),
+            ondelete="RESTRICT",
+        ),
+        sa.PrimaryKeyConstraint(
+            "id",
+            name=op.f("pk_memberships"),
+        ),
+        sa.UniqueConstraint(
+            "tenant_id",
+            "user_id",
+            name=op.f("uq_memberships_tenant_id_user_id"),
+        ),
+    )
+
+    op.create_index(
+        op.f("ix_memberships_user_id"),
+        "memberships",
+        ["user_id"],
+        unique=False,
+    )
+
+    op.create_index(
+        op.f("ix_memberships_role_id"),
+        "memberships",
+        ["role_id"],
+        unique=False,
+    )
+
+    op.create_table(
+        "role_permissions",
+        sa.Column(
+            "role_id",
+            sa.UUID(),
+            nullable=False,
+        ),
+        sa.Column(
+            "permission_id",
+            sa.UUID(),
+            nullable=False,
+        ),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["permission_id"],
+            ["permissions.id"],
+            name=op.f("fk_role_permissions_permission_id_permissions"),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["role_id"],
+            ["roles.id"],
+            name=op.f("fk_role_permissions_role_id_roles"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint(
+            "role_id",
+            "permission_id",
+            name=op.f("pk_role_permissions"),
+        ),
+    )
+
+    op.create_index(
+        op.f("ix_role_permissions_permission_id"),
+        "role_permissions",
+        ["permission_id"],
+        unique=False,
+    )
+
+
+def downgrade() -> None:
+    op.drop_index(
+        op.f("ix_role_permissions_permission_id"),
+        table_name="role_permissions",
+    )
+    op.drop_table("role_permissions")
+
+    op.drop_index(
+        op.f("ix_memberships_role_id"),
+        table_name="memberships",
+    )
+    op.drop_index(
+        op.f("ix_memberships_user_id"),
+        table_name="memberships",
+    )
+    op.drop_table("memberships")
+
+    op.drop_table("users")
+    op.drop_table("tenants")
+    op.drop_table("roles")
+    op.drop_table("permissions")
+
+    op.execute("DROP TYPE IF EXISTS membership_status")
+    op.execute("DROP TYPE IF EXISTS tenant_status")
