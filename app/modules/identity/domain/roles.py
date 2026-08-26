@@ -21,6 +21,10 @@ DEFAULT_ROLES = (
             Permissions.MEMBERSHIP_MANAGE,
             Permissions.ROLE_READ,
             Permissions.ROLE_MANAGE,
+            Permissions.CUSTOMER_READ,
+            Permissions.CUSTOMER_CREATE,
+            Permissions.CUSTOMER_UPDATE,
+            Permissions.CUSTOMER_DELETE,
         ),
     ),
     RoleDefinition(
@@ -31,6 +35,10 @@ DEFAULT_ROLES = (
             Permissions.MEMBERSHIP_READ,
             Permissions.MEMBERSHIP_MANAGE,
             Permissions.ROLE_READ,
+            Permissions.CUSTOMER_READ,
+            Permissions.CUSTOMER_CREATE,
+            Permissions.CUSTOMER_UPDATE,
+            Permissions.CUSTOMER_DELETE,
         ),
     ),
     RoleDefinition(
@@ -39,6 +47,7 @@ DEFAULT_ROLES = (
         permissions=(
             Permissions.TENANT_READ,
             Permissions.MEMBERSHIP_READ,
+            Permissions.CUSTOMER_READ,
         ),
     ),
 )
