@@ -27,7 +27,14 @@ class Settings(BaseSettings):
     db_pool_timeout_seconds: int = Field(default=30, ge=1, le=300)
     db_pool_recycle_seconds: int = Field(default=1800, ge=60)
 
+    auth_jwt_secret: str
+    auth_jwt_algorithm: Literal["HS256"] = "HS256"
+    access_token_ttl_minutes: int = Field(default=15, ge=1, le=60)
+    refresh_token_ttl_days: int = Field(default=30, ge=1, le=90)
+    jwt_issuer: str = "novascale"
+    jwt_audience: str = "novascale-api"
+
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    return Settings.model_validate({})
