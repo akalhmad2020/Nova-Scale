@@ -25,6 +25,10 @@ DEFAULT_ROLES = (
             Permissions.CUSTOMER_CREATE,
             Permissions.CUSTOMER_UPDATE,
             Permissions.CUSTOMER_DELETE,
+            Permissions.LOCATION_READ,
+            Permissions.LOCATION_CREATE,
+            Permissions.LOCATION_UPDATE,
+            Permissions.LOCATION_DELETE,
         ),
     ),
     RoleDefinition(
@@ -39,6 +43,10 @@ DEFAULT_ROLES = (
             Permissions.CUSTOMER_CREATE,
             Permissions.CUSTOMER_UPDATE,
             Permissions.CUSTOMER_DELETE,
+            Permissions.LOCATION_READ,
+            Permissions.LOCATION_CREATE,
+            Permissions.LOCATION_UPDATE,
+            Permissions.LOCATION_DELETE,
         ),
     ),
     RoleDefinition(
@@ -48,6 +56,7 @@ DEFAULT_ROLES = (
             Permissions.TENANT_READ,
             Permissions.MEMBERSHIP_READ,
             Permissions.CUSTOMER_READ,
+            Permissions.LOCATION_READ,
         ),
     ),
 )
