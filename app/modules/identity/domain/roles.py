@@ -29,6 +29,11 @@ DEFAULT_ROLES = (
             Permissions.LOCATION_CREATE,
             Permissions.LOCATION_UPDATE,
             Permissions.LOCATION_DELETE,
+            Permissions.SHIPMENT_READ,
+            Permissions.SHIPMENT_CREATE,
+            Permissions.SHIPMENT_UPDATE,
+            Permissions.SHIPMENT_DELETE,
+            Permissions.SHIPMENT_TRANSITION,
         ),
     ),
     RoleDefinition(
@@ -47,6 +52,11 @@ DEFAULT_ROLES = (
             Permissions.LOCATION_CREATE,
             Permissions.LOCATION_UPDATE,
             Permissions.LOCATION_DELETE,
+            Permissions.SHIPMENT_READ,
+            Permissions.SHIPMENT_CREATE,
+            Permissions.SHIPMENT_UPDATE,
+            Permissions.SHIPMENT_DELETE,
+            Permissions.SHIPMENT_TRANSITION,
         ),
     ),
     RoleDefinition(
@@ -57,6 +67,7 @@ DEFAULT_ROLES = (
             Permissions.MEMBERSHIP_READ,
             Permissions.CUSTOMER_READ,
             Permissions.LOCATION_READ,
+            Permissions.SHIPMENT_READ,
         ),
     ),
 )
