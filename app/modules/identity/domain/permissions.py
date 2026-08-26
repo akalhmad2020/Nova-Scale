@@ -22,6 +22,11 @@ class Permissions:
     CUSTOMER_UPDATE = "customer:update"
     CUSTOMER_DELETE = "customer:delete"
 
+    LOCATION_READ = "location:read"
+    LOCATION_CREATE = "location:create"
+    LOCATION_UPDATE = "location:update"
+    LOCATION_DELETE = "location:delete"
+
 
 PERMISSION_CATALOG = (
     PermissionDefinition(
@@ -63,5 +68,21 @@ PERMISSION_CATALOG = (
     PermissionDefinition(
         code=Permissions.CUSTOMER_DELETE,
         description="Delete customers",
+    ),
+    PermissionDefinition(
+        code=Permissions.LOCATION_READ,
+        description="Read locations",
+    ),
+    PermissionDefinition(
+        code=Permissions.LOCATION_CREATE,
+        description="Create locations",
+    ),
+    PermissionDefinition(
+        code=Permissions.LOCATION_UPDATE,
+        description="Update locations",
+    ),
+    PermissionDefinition(
+        code=Permissions.LOCATION_DELETE,
+        description="Delete locations",
     ),
 )
