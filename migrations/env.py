@@ -9,6 +9,7 @@ from app.modules.customers.infrastructure.models import Customer  # noqa: F401
 from app.modules.identity.infrastructure import models  # noqa: F401
 from app.modules.locations.infrastructure.models import Location  # noqa: F401
 from app.modules.packages.infrastructure.models import Package  # noqa: F401
+from app.modules.shipment_events.infrastructure.models import ShipmentEvent  # noqa: F401
 from app.modules.shipments.infrastructure.models import Shipment  # noqa: F401
 from app.shared.infrastructure.database import Base
 

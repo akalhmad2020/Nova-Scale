@@ -16,6 +16,9 @@ class Permissions:
     PACKAGE_UPDATE = "package:update"
     PACKAGE_DELETE = "package:delete"
 
+    SHIPMENT_EVENT_READ = "shipment_event:read"
+    SHIPMENT_EVENT_CREATE = "shipment_event:create"
+
     MEMBERSHIP_READ = "membership:read"
     MEMBERSHIP_MANAGE = "membership:manage"
 

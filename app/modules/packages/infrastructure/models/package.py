@@ -2,6 +2,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import (
+    CheckConstraint,
     ForeignKey,
     Index,
     Numeric,
@@ -34,6 +35,22 @@ class Package(
         UniqueConstraint(
             "shipment_id",
             "package_number",
+        ),
+        CheckConstraint(
+            "weight > 0",
+            name="ck_packages_weight_positive",
+        ),
+        CheckConstraint(
+            "length IS NULL OR length > 0",
+            name="ck_packages_length_positive",
+        ),
+        CheckConstraint(
+            "width IS NULL OR width > 0",
+            name="ck_packages_width_positive",
+        ),
+        CheckConstraint(
+            "height IS NULL OR height > 0",
+            name="ck_packages_height_positive",
         ),
         Index(
             "ix_packages_tenant_id",
