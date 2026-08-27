@@ -40,6 +40,9 @@ DEFAULT_ROLES = (
             Permissions.PACKAGE_DELETE,
             Permissions.SHIPMENT_EVENT_READ,
             Permissions.SHIPMENT_EVENT_CREATE,
+            Permissions.RATE_READ,
+            Permissions.RATE_CREATE,
+            Permissions.RATE_MANAGE,
         ),
     ),
     RoleDefinition(
@@ -69,6 +72,9 @@ DEFAULT_ROLES = (
             Permissions.PACKAGE_DELETE,
             Permissions.SHIPMENT_EVENT_READ,
             Permissions.SHIPMENT_EVENT_CREATE,
+            Permissions.RATE_READ,
+            Permissions.RATE_CREATE,
+            Permissions.RATE_MANAGE,
         ),
     ),
     RoleDefinition(
@@ -82,6 +88,7 @@ DEFAULT_ROLES = (
             Permissions.SHIPMENT_READ,
             Permissions.PACKAGE_READ,
             Permissions.SHIPMENT_EVENT_READ,
+            Permissions.RATE_READ,
         ),
     ),
 )
