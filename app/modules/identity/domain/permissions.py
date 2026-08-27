@@ -41,6 +41,10 @@ class Permissions:
     SHIPMENT_DELETE = "shipment:delete"
     SHIPMENT_TRANSITION = "shipment:transition"
 
+    RATE_READ = "rate:read"
+    RATE_CREATE = "rate:create"
+    RATE_MANAGE = "rate:manage"
+
 
 PERMISSION_CATALOG = (
     PermissionDefinition(
@@ -142,5 +146,17 @@ PERMISSION_CATALOG = (
     PermissionDefinition(
         code=Permissions.SHIPMENT_EVENT_CREATE,
         description="Create shipment events",
+    ),
+    PermissionDefinition(
+        code=Permissions.RATE_READ,
+        description="Read rate quotes",
+    ),
+    PermissionDefinition(
+        code=Permissions.RATE_CREATE,
+        description="Create rate quotes",
+    ),
+    PermissionDefinition(
+        code=Permissions.RATE_MANAGE,
+        description="Manage rate quote lifecycle",
     ),
 )
