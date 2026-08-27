@@ -16,6 +16,9 @@ class Permissions:
     PACKAGE_UPDATE = "package:update"
     PACKAGE_DELETE = "package:delete"
 
+    SHIPMENT_EVENT_READ = "shipment_event:read"
+    SHIPMENT_EVENT_CREATE = "shipment_event:create"
+
     MEMBERSHIP_READ = "membership:read"
     MEMBERSHIP_MANAGE = "membership:manage"
 
@@ -131,5 +134,13 @@ PERMISSION_CATALOG = (
     PermissionDefinition(
         code=Permissions.PACKAGE_DELETE,
         description="Delete packages",
+    ),
+    PermissionDefinition(
+        code=Permissions.SHIPMENT_EVENT_READ,
+        description="Read shipment events",
+    ),
+    PermissionDefinition(
+        code=Permissions.SHIPMENT_EVENT_CREATE,
+        description="Create shipment events",
     ),
 )
