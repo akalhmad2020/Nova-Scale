@@ -34,6 +34,10 @@ DEFAULT_ROLES = (
             Permissions.SHIPMENT_UPDATE,
             Permissions.SHIPMENT_DELETE,
             Permissions.SHIPMENT_TRANSITION,
+            Permissions.PACKAGE_READ,
+            Permissions.PACKAGE_CREATE,
+            Permissions.PACKAGE_UPDATE,
+            Permissions.PACKAGE_DELETE,
         ),
     ),
     RoleDefinition(
@@ -57,6 +61,10 @@ DEFAULT_ROLES = (
             Permissions.SHIPMENT_UPDATE,
             Permissions.SHIPMENT_DELETE,
             Permissions.SHIPMENT_TRANSITION,
+            Permissions.PACKAGE_READ,
+            Permissions.PACKAGE_CREATE,
+            Permissions.PACKAGE_UPDATE,
+            Permissions.PACKAGE_DELETE,
         ),
     ),
     RoleDefinition(
@@ -68,6 +76,7 @@ DEFAULT_ROLES = (
             Permissions.CUSTOMER_READ,
             Permissions.LOCATION_READ,
             Permissions.SHIPMENT_READ,
+            Permissions.PACKAGE_READ,
         ),
     ),
 )

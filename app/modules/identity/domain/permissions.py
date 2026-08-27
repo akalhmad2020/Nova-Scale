@@ -11,6 +11,11 @@ class Permissions:
     TENANT_READ = "tenant:read"
     TENANT_MANAGE = "tenant:manage"
 
+    PACKAGE_READ = "package:read"
+    PACKAGE_CREATE = "package:create"
+    PACKAGE_UPDATE = "package:update"
+    PACKAGE_DELETE = "package:delete"
+
     MEMBERSHIP_READ = "membership:read"
     MEMBERSHIP_MANAGE = "membership:manage"
 
@@ -110,5 +115,21 @@ PERMISSION_CATALOG = (
     PermissionDefinition(
         code=Permissions.SHIPMENT_TRANSITION,
         description="Transition shipment status",
+    ),
+    PermissionDefinition(
+        code=Permissions.PACKAGE_READ,
+        description="Read packages",
+    ),
+    PermissionDefinition(
+        code=Permissions.PACKAGE_CREATE,
+        description="Create packages",
+    ),
+    PermissionDefinition(
+        code=Permissions.PACKAGE_UPDATE,
+        description="Update packages",
+    ),
+    PermissionDefinition(
+        code=Permissions.PACKAGE_DELETE,
+        description="Delete packages",
     ),
 )
