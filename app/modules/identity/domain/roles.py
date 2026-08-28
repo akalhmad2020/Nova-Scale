@@ -111,7 +111,6 @@ DEFAULT_ROLES = (
             Permissions.RATE_READ,
             Permissions.CARRIER_READ,
             Permissions.CARRIER_SERVICE_READ,
-            
         ),
     ),
 )
