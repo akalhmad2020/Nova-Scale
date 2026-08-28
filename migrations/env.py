@@ -11,6 +11,7 @@ from app.modules.carriers.infrastructure.models import (  # noqa: F401
     CarrierService,
 )
 from app.modules.customers.infrastructure.models import Customer  # noqa: F401
+from app.modules.documents.infrastructure.models import Document, ShipmentLabel  # noqa: F401
 from app.modules.identity.infrastructure import models  # noqa: F401
 from app.modules.locations.infrastructure.models import Location  # noqa: F401
 from app.modules.packages.infrastructure.models import Package  # noqa: F401

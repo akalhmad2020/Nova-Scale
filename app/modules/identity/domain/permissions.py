@@ -60,6 +60,15 @@ class Permissions:
     RATE_CREATE = "rate:create"
     RATE_MANAGE = "rate:manage"
 
+    DOCUMENT_READ = "document:read"
+    DOCUMENT_CREATE = "document:create"
+    DOCUMENT_UPDATE = "document:update"
+
+    SHIPMENT_LABEL_READ = "shipment_label:read"
+    SHIPMENT_LABEL_CREATE = "shipment_label:create"
+    SHIPMENT_LABEL_UPDATE = "shipment_label:update"
+    SHIPMENT_LABEL_VOID = "shipment_label:void"
+
 
 PERMISSION_CATALOG = (
     PermissionDefinition(
@@ -221,5 +230,33 @@ PERMISSION_CATALOG = (
     PermissionDefinition(
         code=Permissions.CARRIER_SERVICE_DELETE,
         description="Delete carrier services",
+    ),
+    PermissionDefinition(
+        code=Permissions.DOCUMENT_READ,
+        description="Read documents",
+    ),
+    PermissionDefinition(
+        code=Permissions.DOCUMENT_CREATE,
+        description="Create documents",
+    ),
+    PermissionDefinition(
+        code=Permissions.DOCUMENT_UPDATE,
+        description="Update document lifecycle",
+    ),
+    PermissionDefinition(
+        code=Permissions.SHIPMENT_LABEL_READ,
+        description="Read shipment labels",
+    ),
+    PermissionDefinition(
+        code=Permissions.SHIPMENT_LABEL_CREATE,
+        description="Create shipment labels",
+    ),
+    PermissionDefinition(
+        code=Permissions.SHIPMENT_LABEL_UPDATE,
+        description="Update shipment label lifecycle",
+    ),
+    PermissionDefinition(
+        code=Permissions.SHIPMENT_LABEL_VOID,
+        description="Void shipment labels",
     ),
 )
