@@ -56,3 +56,4 @@ markers = [
     "integration: tests that require external infrastructure such as PostgreSQL",
 ]
 asyncio_mode = "auto"
+pythonpath = ["."]

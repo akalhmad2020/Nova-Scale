@@ -69,6 +69,13 @@ class Permissions:
     SHIPMENT_LABEL_UPDATE = "shipment_label:update"
     SHIPMENT_LABEL_VOID = "shipment_label:void"
 
+    INVOICE_READ = "invoice:read"
+    INVOICE_CREATE = "invoice:create"
+    INVOICE_UPDATE = "invoice:update"
+    INVOICE_ISSUE = "invoice:issue"
+    INVOICE_MARK_PAID = "invoice:mark_paid"
+    INVOICE_VOID = "invoice:void"
+
 
 PERMISSION_CATALOG = (
     PermissionDefinition(
@@ -258,5 +265,29 @@ PERMISSION_CATALOG = (
     PermissionDefinition(
         code=Permissions.SHIPMENT_LABEL_VOID,
         description="Void shipment labels",
+    ),
+    PermissionDefinition(
+        code=Permissions.INVOICE_READ,
+        description="Read invoices",
+    ),
+    PermissionDefinition(
+        code=Permissions.INVOICE_CREATE,
+        description="Create invoices",
+    ),
+    PermissionDefinition(
+        code=Permissions.INVOICE_UPDATE,
+        description="Update draft invoices",
+    ),
+    PermissionDefinition(
+        code=Permissions.INVOICE_ISSUE,
+        description="Issue invoices",
+    ),
+    PermissionDefinition(
+        code=Permissions.INVOICE_MARK_PAID,
+        description="Mark invoices as paid",
+    ),
+    PermissionDefinition(
+        code=Permissions.INVOICE_VOID,
+        description="Void invoices",
     ),
 )

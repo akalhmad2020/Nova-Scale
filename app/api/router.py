@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.routes.health import router as health_router
+from app.modules.billing.api.routes import router as billing_router
 from app.modules.carriers.api.routes import router as carriers_router
 from app.modules.customers.api.routes import router as customers_router
 from app.modules.documents.api.routes import router as documents_router
@@ -79,5 +80,10 @@ api_router.include_router(
 
 api_router.include_router(
     documents_router,
+    prefix="/api/v1",
+)
+
+api_router.include_router(
+    billing_router,
     prefix="/api/v1",
 )
