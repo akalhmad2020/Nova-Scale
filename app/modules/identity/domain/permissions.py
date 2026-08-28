@@ -30,6 +30,11 @@ class Permissions:
     CUSTOMER_UPDATE = "customer:update"
     CUSTOMER_DELETE = "customer:delete"
 
+    PRICING_RULE_READ = "pricing_rule:read"
+    PRICING_RULE_CREATE = "pricing_rule:create"
+    PRICING_RULE_UPDATE = "pricing_rule:update"
+    PRICING_RULE_DELETE = "pricing_rule:delete"
+
     LOCATION_READ = "location:read"
     LOCATION_CREATE = "location:create"
     LOCATION_UPDATE = "location:update"
@@ -158,5 +163,21 @@ PERMISSION_CATALOG = (
     PermissionDefinition(
         code=Permissions.RATE_MANAGE,
         description="Manage rate quote lifecycle",
+    ),
+    PermissionDefinition(
+        code=Permissions.PRICING_RULE_READ,
+        description="Read pricing rules",
+    ),
+    PermissionDefinition(
+        code=Permissions.PRICING_RULE_CREATE,
+        description="Create pricing rules",
+    ),
+    PermissionDefinition(
+        code=Permissions.PRICING_RULE_UPDATE,
+        description="Update pricing rules",
+    ),
+    PermissionDefinition(
+        code=Permissions.PRICING_RULE_DELETE,
+        description="Delete pricing rules",
     ),
 )

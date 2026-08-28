@@ -43,6 +43,10 @@ DEFAULT_ROLES = (
             Permissions.RATE_READ,
             Permissions.RATE_CREATE,
             Permissions.RATE_MANAGE,
+            Permissions.PRICING_RULE_READ,
+            Permissions.PRICING_RULE_CREATE,
+            Permissions.PRICING_RULE_UPDATE,
+            Permissions.PRICING_RULE_DELETE,
         ),
     ),
     RoleDefinition(

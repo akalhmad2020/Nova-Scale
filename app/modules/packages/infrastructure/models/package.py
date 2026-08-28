@@ -38,19 +38,19 @@ class Package(
         ),
         CheckConstraint(
             "weight > 0",
-            name="ck_packages_weight_positive",
+            name="weight_positive",
         ),
         CheckConstraint(
             "length IS NULL OR length > 0",
-            name="ck_packages_length_positive",
+            name="length_positive",
         ),
         CheckConstraint(
             "width IS NULL OR width > 0",
-            name="ck_packages_width_positive",
+            name="width_positive",
         ),
         CheckConstraint(
             "height IS NULL OR height > 0",
-            name="ck_packages_height_positive",
+            name="height_positive",
         ),
         Index(
             "ix_packages_tenant_id",
