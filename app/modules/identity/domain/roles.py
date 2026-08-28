@@ -62,6 +62,12 @@ DEFAULT_ROLES = (
             Permissions.SHIPMENT_LABEL_CREATE,
             Permissions.SHIPMENT_LABEL_UPDATE,
             Permissions.SHIPMENT_LABEL_VOID,
+            Permissions.INVOICE_READ,
+            Permissions.INVOICE_CREATE,
+            Permissions.INVOICE_UPDATE,
+            Permissions.INVOICE_ISSUE,
+            Permissions.INVOICE_MARK_PAID,
+            Permissions.INVOICE_VOID,
         ),
     ),
     RoleDefinition(
@@ -109,6 +115,12 @@ DEFAULT_ROLES = (
             Permissions.SHIPMENT_LABEL_CREATE,
             Permissions.SHIPMENT_LABEL_UPDATE,
             Permissions.SHIPMENT_LABEL_VOID,
+            Permissions.INVOICE_READ,
+            Permissions.INVOICE_CREATE,
+            Permissions.INVOICE_UPDATE,
+            Permissions.INVOICE_ISSUE,
+            Permissions.INVOICE_MARK_PAID,
+            Permissions.INVOICE_VOID,
         ),
     ),
     RoleDefinition(
@@ -127,6 +139,7 @@ DEFAULT_ROLES = (
             Permissions.CARRIER_SERVICE_READ,
             Permissions.DOCUMENT_READ,
             Permissions.SHIPMENT_LABEL_READ,
+            Permissions.INVOICE_READ,
         ),
     ),
 )

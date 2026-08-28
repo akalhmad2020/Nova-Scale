@@ -24,6 +24,11 @@ class Customer(
     __table_args__ = (
         UniqueConstraint(
             "tenant_id",
+            "id",
+            name="customer_tenant_id",
+        ),
+        UniqueConstraint(
+            "tenant_id",
             "code",
         ),
         Index(
