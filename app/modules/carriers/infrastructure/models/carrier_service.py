@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from uuid import UUID
 
 from sqlalchemy import (
@@ -13,20 +15,18 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.modules.carriers.domain.enums import CarrierServiceStatus
 from app.modules.shipments.domain.enums import ServiceType
 from app.shared.infrastructure.database import Base
-from app.shared.infrastructure.mixins import (
-    TimestampMixin,
-    UUIDPrimaryKeyMixin,
-)
+from app.shared.infrastructure.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
 
-class CarrierService(
-    UUIDPrimaryKeyMixin,
-    TimestampMixin,
-    Base,
-):
+class CarrierService(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "carrier_services"
 
     __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "id",
+            name="carrier_service_tenant_id",
+        ),
         ForeignKeyConstraint(
             [
                 "tenant_id",

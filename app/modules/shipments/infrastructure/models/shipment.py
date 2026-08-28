@@ -39,6 +39,11 @@ class Shipment(
     __table_args__ = (
         UniqueConstraint(
             "tenant_id",
+            "id",
+            name="shipment_tenant_id",
+        ),
+        UniqueConstraint(
+            "tenant_id",
             "tracking_number",
         ),
         Index(

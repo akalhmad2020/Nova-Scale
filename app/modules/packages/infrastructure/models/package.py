@@ -33,6 +33,11 @@ class Package(
 
     __table_args__ = (
         UniqueConstraint(
+            "tenant_id",
+            "id",
+            name="package_tenant_id",
+        ),
+        UniqueConstraint(
             "shipment_id",
             "package_number",
         ),
