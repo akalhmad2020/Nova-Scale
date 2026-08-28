@@ -35,6 +35,16 @@ class Permissions:
     PRICING_RULE_UPDATE = "pricing_rule:update"
     PRICING_RULE_DELETE = "pricing_rule:delete"
 
+    CARRIER_READ = "carrier:read"
+    CARRIER_CREATE = "carrier:create"
+    CARRIER_UPDATE = "carrier:update"
+    CARRIER_DELETE = "carrier:delete"
+
+    CARRIER_SERVICE_READ = "carrier_service:read"
+    CARRIER_SERVICE_CREATE = "carrier_service:create"
+    CARRIER_SERVICE_UPDATE = "carrier_service:update"
+    CARRIER_SERVICE_DELETE = "carrier_service:delete"
+
     LOCATION_READ = "location:read"
     LOCATION_CREATE = "location:create"
     LOCATION_UPDATE = "location:update"
@@ -179,5 +189,37 @@ PERMISSION_CATALOG = (
     PermissionDefinition(
         code=Permissions.PRICING_RULE_DELETE,
         description="Delete pricing rules",
+    ),
+    PermissionDefinition(
+        code=Permissions.CARRIER_READ,
+        description="Read carriers",
+    ),
+    PermissionDefinition(
+        code=Permissions.CARRIER_CREATE,
+        description="Create carriers",
+    ),
+    PermissionDefinition(
+        code=Permissions.CARRIER_UPDATE,
+        description="Update carriers",
+    ),
+    PermissionDefinition(
+        code=Permissions.CARRIER_DELETE,
+        description="Delete carriers",
+    ),
+    PermissionDefinition(
+        code=Permissions.CARRIER_SERVICE_READ,
+        description="Read carrier services",
+    ),
+    PermissionDefinition(
+        code=Permissions.CARRIER_SERVICE_CREATE,
+        description="Create carrier services",
+    ),
+    PermissionDefinition(
+        code=Permissions.CARRIER_SERVICE_UPDATE,
+        description="Update carrier services",
+    ),
+    PermissionDefinition(
+        code=Permissions.CARRIER_SERVICE_DELETE,
+        description="Delete carrier services",
     ),
 )

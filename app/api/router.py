@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.routes.health import router as health_router
+from app.modules.carriers.api.routes import router as carriers_router
 from app.modules.customers.api.routes import router as customers_router
 from app.modules.identity.api.invitation_routes import (
     router as invitation_router,
@@ -67,5 +68,10 @@ api_router.include_router(
 
 api_router.include_router(
     pricing_router,
+    prefix="/api/v1",
+)
+
+api_router.include_router(
+    carriers_router,
     prefix="/api/v1",
 )

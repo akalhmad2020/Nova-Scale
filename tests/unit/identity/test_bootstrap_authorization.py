@@ -96,3 +96,48 @@ async def test_bootstrap_commits_transaction() -> None:
     await use_case.execute()
 
     assert uow.committed is True
+
+
+async def test_bootstrap_assigns_carrier_permissions_to_default_roles() -> None:
+    uow = FakeUnitOfWork()
+
+    use_case = BootstrapAuthorization(uow)
+
+    await use_case.execute()
+
+    owner = await uow.roles.get_by_name("owner")
+    admin = await uow.roles.get_by_name("admin")
+    member = await uow.roles.get_by_name("member")
+
+    assert owner is not None
+    assert admin is not None
+    assert member is not None
+
+    for permission in (
+        Permissions.CARRIER_READ,
+        Permissions.CARRIER_CREATE,
+        Permissions.CARRIER_UPDATE,
+        Permissions.CARRIER_DELETE,
+        Permissions.CARRIER_SERVICE_READ,
+        Permissions.CARRIER_SERVICE_CREATE,
+        Permissions.CARRIER_SERVICE_UPDATE,
+        Permissions.CARRIER_SERVICE_DELETE,
+    ):
+        assert await uow.role_permissions.has_permission(
+            owner.id,
+            permission,
+        )
+
+        assert await uow.role_permissions.has_permission(
+            admin.id,
+            permission,
+        )
+
+    for permission in (
+        Permissions.CARRIER_READ,
+        Permissions.CARRIER_SERVICE_READ,
+    ):
+        assert await uow.role_permissions.has_permission(
+            member.id,
+            permission,
+        )
