@@ -66,3 +66,21 @@ class SQLAlchemyInvoiceRepository:
         invoice: Invoice,
     ) -> None:
         await self._session.refresh(invoice)
+
+    async def get_by_id_for_update(
+        self,
+        *,
+        tenant_id: UUID,
+        invoice_id: UUID,
+    ) -> Invoice | None:
+        statement = (
+            select(Invoice)
+            .where(
+                Invoice.tenant_id == tenant_id,
+                Invoice.id == invoice_id,
+            )
+            .with_for_update()
+        )
+
+        result = await self._session.execute(statement)
+        return result.scalar_one_or_none()

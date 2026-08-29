@@ -39,7 +39,7 @@ from app.modules.billing.application.use_cases.void_invoice import (
     VoidInvoiceUseCase,
 )
 from app.modules.billing.domain.enums import InvoiceStatus
-from tests.unit.modules.billing.fakes import FakeBillingUnitOfWork
+from tests.unit.billing.fakes import FakeBillingUnitOfWork
 
 
 def add_customer(

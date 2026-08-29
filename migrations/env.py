@@ -17,6 +17,10 @@ from app.modules.documents.infrastructure.models import Document, ShipmentLabel 
 from app.modules.identity.infrastructure import models  # noqa: F401
 from app.modules.locations.infrastructure.models import Location  # noqa: F401
 from app.modules.packages.infrastructure.models import Package  # noqa: F401
+from app.modules.payments.infrastructure.models.payment import Payment  # noqa: F401
+from app.modules.payments.infrastructure.models.payment_allocation import (  # noqa: F401
+    PaymentAllocation,
+)
 from app.modules.pricing.infrastructure.models import PricingRule  # noqa: F401
 from app.modules.rates.infrastructure.models.rate_quote import RateQuote  # noqa: F401
 from app.modules.shipment_events.infrastructure.models import ShipmentEvent  # noqa: F401

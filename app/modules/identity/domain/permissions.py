@@ -11,14 +11,6 @@ class Permissions:
     TENANT_READ = "tenant:read"
     TENANT_MANAGE = "tenant:manage"
 
-    PACKAGE_READ = "package:read"
-    PACKAGE_CREATE = "package:create"
-    PACKAGE_UPDATE = "package:update"
-    PACKAGE_DELETE = "package:delete"
-
-    SHIPMENT_EVENT_READ = "shipment_event:read"
-    SHIPMENT_EVENT_CREATE = "shipment_event:create"
-
     MEMBERSHIP_READ = "membership:read"
     MEMBERSHIP_MANAGE = "membership:manage"
 
@@ -29,6 +21,29 @@ class Permissions:
     CUSTOMER_CREATE = "customer:create"
     CUSTOMER_UPDATE = "customer:update"
     CUSTOMER_DELETE = "customer:delete"
+
+    LOCATION_READ = "location:read"
+    LOCATION_CREATE = "location:create"
+    LOCATION_UPDATE = "location:update"
+    LOCATION_DELETE = "location:delete"
+
+    SHIPMENT_READ = "shipment:read"
+    SHIPMENT_CREATE = "shipment:create"
+    SHIPMENT_UPDATE = "shipment:update"
+    SHIPMENT_DELETE = "shipment:delete"
+    SHIPMENT_TRANSITION = "shipment:transition"
+
+    PACKAGE_READ = "package:read"
+    PACKAGE_CREATE = "package:create"
+    PACKAGE_UPDATE = "package:update"
+    PACKAGE_DELETE = "package:delete"
+
+    SHIPMENT_EVENT_READ = "shipment_event:read"
+    SHIPMENT_EVENT_CREATE = "shipment_event:create"
+
+    RATE_READ = "rate:read"
+    RATE_CREATE = "rate:create"
+    RATE_MANAGE = "rate:manage"
 
     PRICING_RULE_READ = "pricing_rule:read"
     PRICING_RULE_CREATE = "pricing_rule:create"
@@ -45,21 +60,6 @@ class Permissions:
     CARRIER_SERVICE_UPDATE = "carrier_service:update"
     CARRIER_SERVICE_DELETE = "carrier_service:delete"
 
-    LOCATION_READ = "location:read"
-    LOCATION_CREATE = "location:create"
-    LOCATION_UPDATE = "location:update"
-    LOCATION_DELETE = "location:delete"
-
-    SHIPMENT_READ = "shipment:read"
-    SHIPMENT_CREATE = "shipment:create"
-    SHIPMENT_UPDATE = "shipment:update"
-    SHIPMENT_DELETE = "shipment:delete"
-    SHIPMENT_TRANSITION = "shipment:transition"
-
-    RATE_READ = "rate:read"
-    RATE_CREATE = "rate:create"
-    RATE_MANAGE = "rate:manage"
-
     DOCUMENT_READ = "document:read"
     DOCUMENT_CREATE = "document:create"
     DOCUMENT_UPDATE = "document:update"
@@ -75,6 +75,12 @@ class Permissions:
     INVOICE_ISSUE = "invoice:issue"
     INVOICE_MARK_PAID = "invoice:mark_paid"
     INVOICE_VOID = "invoice:void"
+
+    PAYMENT_READ = "payment:read"
+    PAYMENT_CREATE = "payment:create"
+    PAYMENT_UPDATE = "payment:update"
+    PAYMENT_POST = "payment:post"
+    PAYMENT_VOID = "payment:void"
 
 
 PERMISSION_CATALOG = (
@@ -289,5 +295,25 @@ PERMISSION_CATALOG = (
     PermissionDefinition(
         code=Permissions.INVOICE_VOID,
         description="Void invoices",
+    ),
+    PermissionDefinition(
+        code=Permissions.PAYMENT_READ,
+        description="Read payments",
+    ),
+    PermissionDefinition(
+        code=Permissions.PAYMENT_CREATE,
+        description="Create payments",
+    ),
+    PermissionDefinition(
+        code=Permissions.PAYMENT_UPDATE,
+        description="Update payment allocations",
+    ),
+    PermissionDefinition(
+        code=Permissions.PAYMENT_POST,
+        description="Post payments",
+    ),
+    PermissionDefinition(
+        code=Permissions.PAYMENT_VOID,
+        description="Void payments",
     ),
 )
