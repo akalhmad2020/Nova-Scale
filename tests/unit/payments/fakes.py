@@ -43,8 +43,7 @@ class FakePaymentRepository:
             (
                 payment
                 for payment in self.items
-                if payment.tenant_id == tenant_id
-                and payment.id == payment_id
+                if payment.tenant_id == tenant_id and payment.id == payment_id
             ),
             None,
         )
@@ -70,8 +69,7 @@ class FakePaymentRepository:
             (
                 payment
                 for payment in self.items
-                if payment.tenant_id == tenant_id
-                and payment.payment_number == payment_number
+                if payment.tenant_id == tenant_id and payment.payment_number == payment_number
             ),
             None,
         )
@@ -81,11 +79,7 @@ class FakePaymentRepository:
         *,
         tenant_id: UUID,
     ) -> list[Payment]:
-        return [
-            payment
-            for payment in self.items
-            if payment.tenant_id == tenant_id
-        ]
+        return [payment for payment in self.items if payment.tenant_id == tenant_id]
 
     async def refresh(
         self,
@@ -118,8 +112,7 @@ class FakePaymentAllocationRepository:
             (
                 allocation
                 for allocation in self.items
-                if allocation.tenant_id == tenant_id
-                and allocation.id == payment_allocation_id
+                if allocation.tenant_id == tenant_id and allocation.id == payment_allocation_id
             ),
             None,
         )
@@ -151,8 +144,7 @@ class FakePaymentAllocationRepository:
         return [
             allocation
             for allocation in self.items
-            if allocation.tenant_id == tenant_id
-            and allocation.payment_id == payment_id
+            if allocation.tenant_id == tenant_id and allocation.payment_id == payment_id
         ]
 
     async def list_by_invoice(
@@ -164,8 +156,7 @@ class FakePaymentAllocationRepository:
         return [
             allocation
             for allocation in self.items
-            if allocation.tenant_id == tenant_id
-            and allocation.invoice_id == invoice_id
+            if allocation.tenant_id == tenant_id and allocation.invoice_id == invoice_id
         ]
 
     async def sum_posted_by_invoice(
@@ -177,10 +168,7 @@ class FakePaymentAllocationRepository:
         total = Decimal("0.00")
 
         for allocation in self.items:
-            if (
-                allocation.tenant_id != tenant_id
-                or allocation.invoice_id != invoice_id
-            ):
+            if allocation.tenant_id != tenant_id or allocation.invoice_id != invoice_id:
                 continue
 
             payment = await self._payments.get_by_id(
@@ -188,10 +176,7 @@ class FakePaymentAllocationRepository:
                 payment_id=allocation.payment_id,
             )
 
-            if (
-                payment is not None
-                and payment.status == PaymentStatus.POSTED
-            ):
+            if payment is not None and payment.status == PaymentStatus.POSTED:
                 total += allocation.amount
 
         return total
@@ -212,11 +197,7 @@ class FakeCustomerRepository:
         customer_id: UUID,
     ) -> Customer | None:
         return next(
-            (
-                customer
-                for customer in self.items
-                if customer.id == customer_id
-            ),
+            (customer for customer in self.items if customer.id == customer_id),
             None,
         )
 
@@ -229,8 +210,7 @@ class FakeCustomerRepository:
             (
                 customer
                 for customer in self.items
-                if customer.code == code
-                and customer.tenant_id == tenant_id
+                if customer.code == code and customer.tenant_id == tenant_id
             ),
             None,
         )
@@ -239,11 +219,7 @@ class FakeCustomerRepository:
         self,
         tenant_id: UUID,
     ) -> list[Customer]:
-        return [
-            customer
-            for customer in self.items
-            if customer.tenant_id == tenant_id
-        ]
+        return [customer for customer in self.items if customer.tenant_id == tenant_id]
 
     def add(
         self,
@@ -260,8 +236,7 @@ class FakeCustomerRepository:
             (
                 customer
                 for customer in self.items
-                if customer.id == customer_id
-                and customer.tenant_id == tenant_id
+                if customer.id == customer_id and customer.tenant_id == tenant_id
             ),
             None,
         )
@@ -287,8 +262,7 @@ class FakeInvoiceRepository:
             (
                 invoice
                 for invoice in self.items
-                if invoice.tenant_id == tenant_id
-                and invoice.id == invoice_id
+                if invoice.tenant_id == tenant_id and invoice.id == invoice_id
             ),
             None,
         )
@@ -314,8 +288,7 @@ class FakeInvoiceRepository:
             (
                 invoice
                 for invoice in self.items
-                if invoice.tenant_id == tenant_id
-                and invoice.invoice_number == invoice_number
+                if invoice.tenant_id == tenant_id and invoice.invoice_number == invoice_number
             ),
             None,
         )
@@ -325,11 +298,7 @@ class FakeInvoiceRepository:
         *,
         tenant_id: UUID,
     ) -> Sequence[Invoice]:
-        return [
-            invoice
-            for invoice in self.items
-            if invoice.tenant_id == tenant_id
-        ]
+        return [invoice for invoice in self.items if invoice.tenant_id == tenant_id]
 
     async def refresh(
         self,
