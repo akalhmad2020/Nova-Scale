@@ -12,6 +12,7 @@ from app.modules.identity.api.routes import router as identity_router
 from app.modules.identity.api.tenant_routes import router as tenant_router
 from app.modules.locations.api.routes import router as locations_router
 from app.modules.packages.api.routes import router as packages_router
+from app.modules.payments.api.routes import router as payments_router
 from app.modules.pricing.api.routes import router as pricing_router
 from app.modules.rates.api.routes import router as rates_router
 from app.modules.shipment_events.api.routes import (
@@ -83,7 +84,13 @@ api_router.include_router(
     prefix="/api/v1",
 )
 
+
 api_router.include_router(
     billing_router,
+    prefix="/api/v1",
+)
+
+api_router.include_router(
+    payments_router,
     prefix="/api/v1",
 )

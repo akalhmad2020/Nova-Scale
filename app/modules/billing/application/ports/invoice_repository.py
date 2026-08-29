@@ -15,6 +15,13 @@ class InvoiceRepository(Protocol):
         invoice_id: UUID,
     ) -> Invoice | None: ...
 
+    async def get_by_id_for_update(
+        self,
+        *,
+        tenant_id: UUID,
+        invoice_id: UUID,
+    ) -> Invoice | None: ...
+
     async def get_by_number(
         self,
         *,

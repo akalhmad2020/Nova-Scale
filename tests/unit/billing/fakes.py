@@ -44,6 +44,17 @@ class FakeInvoiceRepository:
 
         return None
 
+    async def get_by_id_for_update(
+        self,
+        *,
+        tenant_id: UUID,
+        invoice_id: UUID,
+    ) -> Invoice | None:
+        return await self.get_by_id(
+            tenant_id=tenant_id,
+            invoice_id=invoice_id,
+        )
+
     async def get_by_number(
         self,
         *,

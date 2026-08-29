@@ -68,6 +68,11 @@ DEFAULT_ROLES = (
             Permissions.INVOICE_ISSUE,
             Permissions.INVOICE_MARK_PAID,
             Permissions.INVOICE_VOID,
+            Permissions.PAYMENT_READ,
+            Permissions.PAYMENT_CREATE,
+            Permissions.PAYMENT_UPDATE,
+            Permissions.PAYMENT_POST,
+            Permissions.PAYMENT_VOID,
         ),
     ),
     RoleDefinition(
@@ -121,6 +126,11 @@ DEFAULT_ROLES = (
             Permissions.INVOICE_ISSUE,
             Permissions.INVOICE_MARK_PAID,
             Permissions.INVOICE_VOID,
+            Permissions.PAYMENT_READ,
+            Permissions.PAYMENT_CREATE,
+            Permissions.PAYMENT_UPDATE,
+            Permissions.PAYMENT_POST,
+            Permissions.PAYMENT_VOID,
         ),
     ),
     RoleDefinition(
@@ -140,6 +150,7 @@ DEFAULT_ROLES = (
             Permissions.DOCUMENT_READ,
             Permissions.SHIPMENT_LABEL_READ,
             Permissions.INVOICE_READ,
+            Permissions.PAYMENT_READ,
         ),
     ),
 )
