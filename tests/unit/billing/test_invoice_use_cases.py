@@ -29,9 +29,6 @@ from app.modules.billing.application.use_cases.issue_invoice import (
 from app.modules.billing.application.use_cases.list_invoices import (
     ListInvoicesUseCase,
 )
-from app.modules.billing.application.use_cases.mark_invoice_paid import (
-    MarkInvoicePaidUseCase,
-)
 from app.modules.billing.application.use_cases.remove_invoice_line import (
     RemoveInvoiceLineUseCase,
 )
@@ -39,6 +36,12 @@ from app.modules.billing.application.use_cases.void_invoice import (
     VoidInvoiceUseCase,
 )
 from app.modules.billing.domain.enums import InvoiceStatus
+from app.modules.ledger.domain.enums import (
+    LedgerAccountPurpose,
+    LedgerAccountStatus,
+    LedgerAccountType,
+)
+from app.modules.ledger.infrastructure.models import LedgerAccount
 from tests.unit.billing.fakes import FakeBillingUnitOfWork
 
 
@@ -55,6 +58,35 @@ def add_customer(
     )
 
     return customer_id
+
+
+def add_invoice_ledger_accounts(
+    unit_of_work: FakeBillingUnitOfWork,
+    *,
+    tenant_id: UUID,
+) -> None:
+    unit_of_work.fake_ledger_accounts.items.extend(
+        [
+            LedgerAccount(
+                id=uuid4(),
+                tenant_id=tenant_id,
+                code="1100",
+                name="Accounts Receivable",
+                type=LedgerAccountType.ASSET.value,
+                purpose=LedgerAccountPurpose.ACCOUNTS_RECEIVABLE.value,
+                status=LedgerAccountStatus.ACTIVE.value,
+            ),
+            LedgerAccount(
+                id=uuid4(),
+                tenant_id=tenant_id,
+                code="4000",
+                name="Revenue",
+                type=LedgerAccountType.REVENUE.value,
+                purpose=LedgerAccountPurpose.REVENUE.value,
+                status=LedgerAccountStatus.ACTIVE.value,
+            ),
+        ]
+    )
 
 
 @pytest.mark.asyncio
@@ -582,7 +614,10 @@ async def test_remove_invoice_line_rejects_non_draft_invoice() -> None:
 async def test_issue_invoice() -> None:
     tenant_id = uuid4()
     unit_of_work = FakeBillingUnitOfWork()
-
+    add_invoice_ledger_accounts(
+        unit_of_work,
+        tenant_id=tenant_id,
+    )
     create_invoice = CreateInvoiceUseCase(unit_of_work)
     add_line = AddInvoiceLineUseCase(unit_of_work)
     issue_invoice = IssueInvoiceUseCase(unit_of_work)
@@ -634,67 +669,6 @@ async def test_issue_invoice_rejects_invoice_without_lines() -> None:
 
 
 @pytest.mark.asyncio
-async def test_issued_invoice_can_be_marked_paid() -> None:
-    tenant_id = uuid4()
-    unit_of_work = FakeBillingUnitOfWork()
-
-    create_invoice = CreateInvoiceUseCase(unit_of_work)
-    add_line = AddInvoiceLineUseCase(unit_of_work)
-    issue_invoice = IssueInvoiceUseCase(unit_of_work)
-    mark_paid = MarkInvoicePaidUseCase(unit_of_work)
-
-    invoice = await create_invoice.execute(
-        tenant_id=tenant_id,
-        customer_id=add_customer(unit_of_work, tenant_id=tenant_id),
-        invoice_number="INV-0001",
-        currency="USD",
-    )
-
-    await add_line.execute(
-        tenant_id=tenant_id,
-        invoice_id=invoice.id,
-        description="Shipping service",
-        quantity=Decimal("1.0000"),
-        unit_price=Decimal("25.00"),
-    )
-
-    await issue_invoice.execute(
-        tenant_id=tenant_id,
-        invoice_id=invoice.id,
-    )
-
-    result = await mark_paid.execute(
-        tenant_id=tenant_id,
-        invoice_id=invoice.id,
-    )
-
-    assert result.status == InvoiceStatus.PAID
-    assert result.paid_at is not None
-
-
-@pytest.mark.asyncio
-async def test_draft_invoice_cannot_be_marked_paid() -> None:
-    tenant_id = uuid4()
-    unit_of_work = FakeBillingUnitOfWork()
-
-    create_invoice = CreateInvoiceUseCase(unit_of_work)
-    mark_paid = MarkInvoicePaidUseCase(unit_of_work)
-
-    invoice = await create_invoice.execute(
-        tenant_id=tenant_id,
-        customer_id=add_customer(unit_of_work, tenant_id=tenant_id),
-        invoice_number="INV-0001",
-        currency="USD",
-    )
-
-    with pytest.raises(InvalidInvoiceStateTransitionError):
-        await mark_paid.execute(
-            tenant_id=tenant_id,
-            invoice_id=invoice.id,
-        )
-
-
-@pytest.mark.asyncio
 async def test_draft_invoice_can_be_voided() -> None:
     tenant_id = uuid4()
     unit_of_work = FakeBillingUnitOfWork()
@@ -721,11 +695,14 @@ async def test_draft_invoice_can_be_voided() -> None:
 async def test_paid_invoice_cannot_be_voided() -> None:
     tenant_id = uuid4()
     unit_of_work = FakeBillingUnitOfWork()
+    add_invoice_ledger_accounts(
+        unit_of_work,
+        tenant_id=tenant_id,
+    )
 
     create_invoice = CreateInvoiceUseCase(unit_of_work)
     add_line = AddInvoiceLineUseCase(unit_of_work)
     issue_invoice = IssueInvoiceUseCase(unit_of_work)
-    mark_paid = MarkInvoicePaidUseCase(unit_of_work)
     void_invoice = VoidInvoiceUseCase(unit_of_work)
 
     invoice = await create_invoice.execute(
@@ -748,10 +725,7 @@ async def test_paid_invoice_cannot_be_voided() -> None:
         invoice_id=invoice.id,
     )
 
-    await mark_paid.execute(
-        tenant_id=tenant_id,
-        invoice_id=invoice.id,
-    )
+    invoice.status = InvoiceStatus.PAID
 
     with pytest.raises(InvalidInvoiceStateTransitionError):
         await void_invoice.execute(

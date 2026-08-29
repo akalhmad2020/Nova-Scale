@@ -31,6 +31,17 @@ from app.modules.identity.infrastructure.models.user import User
 from app.modules.identity.infrastructure.security.password_hasher import (
     Argon2PasswordHasher,
 )
+from app.modules.ledger.domain.enums import (
+    JournalSourceType,
+    LedgerAccountPurpose,
+    LedgerAccountStatus,
+    LedgerAccountType,
+)
+from app.modules.ledger.infrastructure.models import (
+    JournalEntry,
+    JournalLine,
+    LedgerAccount,
+)
 
 
 async def cleanup_test_data(
@@ -78,6 +89,24 @@ async def cleanup_test_data(
             )
 
             if tenant_ids:
+                await session.execute(
+                    delete(JournalLine).where(
+                        JournalLine.tenant_id.in_(tenant_ids),
+                    )
+                )
+
+                await session.execute(
+                    delete(JournalEntry).where(
+                        JournalEntry.tenant_id.in_(tenant_ids),
+                    )
+                )
+
+                await session.execute(
+                    delete(LedgerAccount).where(
+                        LedgerAccount.tenant_id.in_(tenant_ids),
+                    )
+                )
+
                 await session.execute(
                     delete(InvoiceLine).where(
                         InvoiceLine.tenant_id.in_(tenant_ids),
@@ -253,6 +282,120 @@ async def create_lifecycle_context(
             await session.commit()
 
             return tenant, customer
+
+    finally:
+        await engine.dispose()
+
+
+async def create_ledger_system_accounts(
+    *,
+    tenant_id: UUID,
+) -> None:
+    settings = get_settings()
+
+    engine = create_async_engine(
+        settings.database_url,
+        poolclass=NullPool,
+    )
+
+    session_factory = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autoflush=False,
+    )
+
+    try:
+        async with session_factory() as session:
+            session.add_all(
+                [
+                    LedgerAccount(
+                        tenant_id=tenant_id,
+                        code="1000",
+                        name="Cash",
+                        type=LedgerAccountType.ASSET.value,
+                        purpose=LedgerAccountPurpose.CASH.value,
+                        status=LedgerAccountStatus.ACTIVE.value,
+                    ),
+                    LedgerAccount(
+                        tenant_id=tenant_id,
+                        code="1100",
+                        name="Accounts Receivable",
+                        type=LedgerAccountType.ASSET.value,
+                        purpose=LedgerAccountPurpose.ACCOUNTS_RECEIVABLE.value,
+                        status=LedgerAccountStatus.ACTIVE.value,
+                    ),
+                    LedgerAccount(
+                        tenant_id=tenant_id,
+                        code="2100",
+                        name="Tax Payable",
+                        type=LedgerAccountType.LIABILITY.value,
+                        purpose=LedgerAccountPurpose.TAX_PAYABLE.value,
+                        status=LedgerAccountStatus.ACTIVE.value,
+                    ),
+                    LedgerAccount(
+                        tenant_id=tenant_id,
+                        code="4000",
+                        name="Revenue",
+                        type=LedgerAccountType.REVENUE.value,
+                        purpose=LedgerAccountPurpose.REVENUE.value,
+                        status=LedgerAccountStatus.ACTIVE.value,
+                    ),
+                ]
+            )
+
+            await session.commit()
+
+    finally:
+        await engine.dispose()
+
+
+async def get_invoice_journal(
+    *,
+    tenant_id: UUID,
+    invoice_id: UUID,
+) -> tuple[JournalEntry | None, list[JournalLine]]:
+    settings = get_settings()
+
+    engine = create_async_engine(
+        settings.database_url,
+        poolclass=NullPool,
+    )
+
+    session_factory = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autoflush=False,
+    )
+
+    try:
+        async with session_factory() as session:
+            entry = await session.scalar(
+                select(JournalEntry).where(
+                    JournalEntry.tenant_id == tenant_id,
+                    JournalEntry.source_type == JournalSourceType.INVOICE_ISSUED.value,
+                    JournalEntry.source_id == invoice_id,
+                )
+            )
+
+            if entry is None:
+                return None, []
+
+            lines = list(
+                (
+                    await session.scalars(
+                        select(JournalLine)
+                        .where(
+                            JournalLine.tenant_id == tenant_id,
+                            JournalLine.journal_entry_id == entry.id,
+                        )
+                        .order_by(JournalLine.id)
+                    )
+                ).all()
+            )
+
+            return entry, lines
 
     finally:
         await engine.dispose()
@@ -474,6 +617,10 @@ async def test_issue_invoice_endpoint_issues_draft_invoice() -> None:
         permission_codes=(Permissions.INVOICE_ISSUE,),
     )
 
+    await create_ledger_system_accounts(
+        tenant_id=tenant.id,
+    )
+
     invoice = await create_invoice(
         tenant_id=tenant.id,
         customer_id=customer.id,
@@ -511,6 +658,75 @@ async def test_issue_invoice_endpoint_issues_draft_invoice() -> None:
         assert persisted_invoice.status == InvoiceStatus.ISSUED
         assert persisted_invoice.issued_at is not None
         assert persisted_invoice.paid_at is None
+
+        entry, journal_lines = await get_invoice_journal(
+            tenant_id=tenant.id,
+            invoice_id=invoice.id,
+        )
+
+        assert entry is not None
+        assert entry.source_type == JournalSourceType.INVOICE_ISSUED.value
+        assert entry.source_id == invoice.id
+        assert entry.posted_at is not None
+
+        assert len(journal_lines) == 3
+
+        settings = get_settings()
+
+        engine = create_async_engine(
+            settings.database_url,
+            poolclass=NullPool,
+        )
+
+        session_factory = async_sessionmaker(
+            bind=engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+            autoflush=False,
+        )
+
+        try:
+            async with session_factory() as session:
+                accounts = list(
+                    (
+                        await session.scalars(
+                            select(LedgerAccount).where(
+                                LedgerAccount.tenant_id == tenant.id,
+                            )
+                        )
+                    ).all()
+                )
+        finally:
+            await engine.dispose()
+
+        accounts_by_id = {account.id: account for account in accounts}
+
+        lines_by_purpose = {
+            accounts_by_id[line.ledger_account_id].purpose: line for line in journal_lines
+        }
+
+        accounts_receivable_line = lines_by_purpose[LedgerAccountPurpose.ACCOUNTS_RECEIVABLE.value]
+        revenue_line = lines_by_purpose[LedgerAccountPurpose.REVENUE.value]
+        tax_payable_line = lines_by_purpose[LedgerAccountPurpose.TAX_PAYABLE.value]
+
+        assert accounts_receivable_line.debit == Decimal("30.00")
+        assert accounts_receivable_line.credit == Decimal("0.00")
+
+        assert revenue_line.debit == Decimal("0.00")
+        assert revenue_line.credit == Decimal("25.00")
+
+        assert tax_payable_line.debit == Decimal("0.00")
+        assert tax_payable_line.credit == Decimal("5.00")
+
+        assert sum(
+            (line.debit for line in journal_lines),
+            start=Decimal("0.00"),
+        ) == Decimal("30.00")
+
+        assert sum(
+            (line.credit for line in journal_lines),
+            start=Decimal("0.00"),
+        ) == Decimal("30.00")
 
     finally:
         await cleanup_test_data(
@@ -617,125 +833,6 @@ async def test_issue_invoice_endpoint_requires_permission() -> None:
         assert response.json() == {
             "detail": "Permission denied",
         }
-
-    finally:
-        await cleanup_test_data(
-            email=email,
-            tenant_slugs=(tenant_slug,),
-            role_name=role_name,
-        )
-
-
-@pytest.mark.integration
-async def test_mark_invoice_paid_endpoint_marks_issued_invoice_paid() -> None:
-    unique = uuid4()
-
-    email = f"billing-paid-{unique}@example.com"
-    password = "very-secure-billing-password"
-    tenant_slug = f"billing-paid-tenant-{unique}"
-    role_name = f"billing-paid-role-{unique}"
-
-    tenant, customer = await create_lifecycle_context(
-        email=email,
-        password=password,
-        tenant_slug=tenant_slug,
-        role_name=role_name,
-        permission_codes=(Permissions.INVOICE_MARK_PAID,),
-    )
-
-    invoice = await create_invoice(
-        tenant_id=tenant.id,
-        customer_id=customer.id,
-        invoice_number="INV-PAID-001",
-        status=InvoiceStatus.ISSUED,
-        with_line=True,
-    )
-
-    try:
-        access_token = login_and_get_access_token(
-            email=email,
-            password=password,
-        )
-
-        with TestClient(app) as client:
-            response = client.post(
-                f"/api/v1/tenants/{tenant.id}/invoices/{invoice.id}/mark-paid",
-                headers={
-                    "Authorization": f"Bearer {access_token}",
-                },
-            )
-
-        assert response.status_code == 200
-
-        body = response.json()
-
-        assert body["id"] == str(invoice.id)
-        assert body["status"] == "paid"
-        assert body["issued_at"] is not None
-        assert body["paid_at"] is not None
-
-        persisted_invoice = await get_invoice(
-            invoice_id=invoice.id,
-        )
-
-        assert persisted_invoice.status == InvoiceStatus.PAID
-        assert persisted_invoice.issued_at is not None
-        assert persisted_invoice.paid_at is not None
-
-    finally:
-        await cleanup_test_data(
-            email=email,
-            tenant_slugs=(tenant_slug,),
-            role_name=role_name,
-        )
-
-
-@pytest.mark.integration
-async def test_mark_invoice_paid_endpoint_rejects_draft_invoice() -> None:
-    unique = uuid4()
-
-    email = f"billing-paid-draft-{unique}@example.com"
-    password = "very-secure-billing-password"
-    tenant_slug = f"billing-paid-draft-tenant-{unique}"
-    role_name = f"billing-paid-draft-role-{unique}"
-
-    tenant, customer = await create_lifecycle_context(
-        email=email,
-        password=password,
-        tenant_slug=tenant_slug,
-        role_name=role_name,
-        permission_codes=(Permissions.INVOICE_MARK_PAID,),
-    )
-
-    invoice = await create_invoice(
-        tenant_id=tenant.id,
-        customer_id=customer.id,
-        invoice_number="INV-PAID-DRAFT-001",
-        with_line=True,
-    )
-
-    try:
-        access_token = login_and_get_access_token(
-            email=email,
-            password=password,
-        )
-
-        with TestClient(app) as client:
-            response = client.post(
-                f"/api/v1/tenants/{tenant.id}/invoices/{invoice.id}/mark-paid",
-                headers={
-                    "Authorization": f"Bearer {access_token}",
-                },
-            )
-
-        assert response.status_code == 409
-
-        persisted_invoice = await get_invoice(
-            invoice_id=invoice.id,
-        )
-
-        assert persisted_invoice.status == InvoiceStatus.DRAFT
-        assert persisted_invoice.paid_at is None
 
     finally:
         await cleanup_test_data(
@@ -915,55 +1012,6 @@ async def test_issue_invoice_endpoint_rejects_void_invoice() -> None:
 
 
 @pytest.mark.integration
-async def test_mark_invoice_paid_endpoint_rejects_already_paid_invoice() -> None:
-    unique = uuid4()
-
-    email = f"billing-paid-again-{unique}@example.com"
-    password = "very-secure-billing-password"
-    tenant_slug = f"billing-paid-again-tenant-{unique}"
-    role_name = f"billing-paid-again-role-{unique}"
-
-    tenant, customer = await create_lifecycle_context(
-        email=email,
-        password=password,
-        tenant_slug=tenant_slug,
-        role_name=role_name,
-        permission_codes=(Permissions.INVOICE_MARK_PAID,),
-    )
-
-    invoice = await create_invoice(
-        tenant_id=tenant.id,
-        customer_id=customer.id,
-        invoice_number="INV-PAID-AGAIN-001",
-        status=InvoiceStatus.PAID,
-        with_line=True,
-    )
-
-    try:
-        access_token = login_and_get_access_token(
-            email=email,
-            password=password,
-        )
-
-        with TestClient(app) as client:
-            response = client.post(
-                f"/api/v1/tenants/{tenant.id}/invoices/{invoice.id}/mark-paid",
-                headers={
-                    "Authorization": f"Bearer {access_token}",
-                },
-            )
-
-        assert response.status_code == 409
-
-    finally:
-        await cleanup_test_data(
-            email=email,
-            tenant_slugs=(tenant_slug,),
-            role_name=role_name,
-        )
-
-
-@pytest.mark.integration
 async def test_invoice_lifecycle_endpoint_hides_foreign_invoice() -> None:
     unique = uuid4()
 
@@ -1012,5 +1060,119 @@ async def test_invoice_lifecycle_endpoint_hides_foreign_invoice() -> None:
                 tenant_slug,
                 foreign_tenant_slug,
             ),
+            role_name=role_name,
+        )
+
+
+async def deactivate_ledger_account(
+    *,
+    tenant_id: UUID,
+    purpose: LedgerAccountPurpose,
+) -> None:
+    settings = get_settings()
+
+    engine = create_async_engine(
+        settings.database_url,
+        poolclass=NullPool,
+    )
+
+    session_factory = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autoflush=False,
+    )
+
+    try:
+        async with session_factory() as session:
+            account = await session.scalar(
+                select(LedgerAccount).where(
+                    LedgerAccount.tenant_id == tenant_id,
+                    LedgerAccount.purpose == purpose.value,
+                )
+            )
+
+            assert account is not None
+
+            account.status = LedgerAccountStatus.INACTIVE.value
+
+            await session.commit()
+
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.integration
+async def test_issue_invoice_rolls_back_when_ledger_account_is_inactive() -> None:
+    unique = uuid4()
+
+    email = f"billing-ledger-rollback-{unique}@example.com"
+    password = "very-secure-billing-password"
+    tenant_slug = f"billing-ledger-rollback-tenant-{unique}"
+    role_name = f"billing-ledger-rollback-role-{unique}"
+
+    tenant, customer = await create_lifecycle_context(
+        email=email,
+        password=password,
+        tenant_slug=tenant_slug,
+        role_name=role_name,
+        permission_codes=(Permissions.INVOICE_ISSUE,),
+    )
+
+    await create_ledger_system_accounts(
+        tenant_id=tenant.id,
+    )
+
+    invoice = await create_invoice(
+        tenant_id=tenant.id,
+        customer_id=customer.id,
+        invoice_number="INV-LEDGER-ROLLBACK-001",
+        with_line=True,
+    )
+
+    await deactivate_ledger_account(
+        tenant_id=tenant.id,
+        purpose=LedgerAccountPurpose.ACCOUNTS_RECEIVABLE,
+    )
+
+    try:
+        access_token = login_and_get_access_token(
+            email=email,
+            password=password,
+        )
+
+        with TestClient(app) as client:
+            response = client.post(
+                f"/api/v1/tenants/{tenant.id}/invoices/{invoice.id}/issue",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                },
+            )
+
+        assert response.status_code == 409
+        assert response.json() == {
+            "detail": "Required ledger account is inactive",
+        }
+
+        persisted_invoice = await get_invoice(
+            invoice_id=invoice.id,
+        )
+
+        assert persisted_invoice.status == InvoiceStatus.DRAFT
+        assert persisted_invoice.issued_at is None
+        assert persisted_invoice.paid_at is None
+
+        entry, journal_lines = await get_invoice_journal(
+            tenant_id=tenant.id,
+            invoice_id=invoice.id,
+        )
+
+        assert entry is None
+        assert journal_lines == []
+
+    finally:
+        await cleanup_test_data(
+            email=email,
+            tenant_slugs=(tenant_slug,),
             role_name=role_name,
         )

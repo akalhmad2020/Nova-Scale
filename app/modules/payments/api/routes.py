@@ -6,6 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from app.modules.identity.api.auth_dependencies import require_permission
 from app.modules.identity.domain.permissions import Permissions
 from app.modules.identity.infrastructure.models.membership import Membership
+from app.modules.ledger.application.exceptions import (
+    LedgerAccountInactiveError,
+    LedgerAccountNotFoundError,
+)
 from app.modules.payments.api.dependencies import (
     get_add_payment_allocation_use_case,
     get_create_payment_use_case,
@@ -53,6 +57,7 @@ from app.modules.payments.domain.exceptions import (
     PaymentCurrencyMismatchError,
     PaymentCustomerNotFoundError,
     PaymentNotFoundError,
+    PaymentNotFullyAllocatedError,
 )
 
 router = APIRouter(
@@ -224,6 +229,22 @@ async def add_payment_allocation(
             detail="Payment allocation exceeds invoice amount",
         ) from exc
 
+    except PaymentNotFullyAllocatedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Payment must be fully allocated before posting",
+        ) from exc
+    except LedgerAccountNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Required ledger account was not found",
+        ) from exc
+    except LedgerAccountInactiveError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Required ledger account is inactive",
+        ) from exc
+
     return PaymentAllocationResponse.model_validate(allocation)
 
 
@@ -323,6 +344,21 @@ async def post_payment(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Payment allocation exceeds invoice amount",
+        ) from exc
+    except PaymentNotFullyAllocatedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Payment must be fully allocated before posting",
+        ) from exc
+    except LedgerAccountNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Required ledger account was not found",
+        ) from exc
+    except LedgerAccountInactiveError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Required ledger account is inactive",
         ) from exc
 
     return PaymentResponse.model_validate(payment)

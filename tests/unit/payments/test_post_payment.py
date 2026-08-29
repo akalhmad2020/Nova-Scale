@@ -5,6 +5,17 @@ import pytest
 
 from app.modules.billing.domain.enums import InvoiceStatus
 from app.modules.billing.infrastructure.models.invoice import Invoice
+from app.modules.ledger.application.exceptions import (
+    LedgerAccountInactiveError,
+    LedgerAccountNotFoundError,
+)
+from app.modules.ledger.domain.enums import (
+    JournalSourceType,
+    LedgerAccountPurpose,
+    LedgerAccountStatus,
+    LedgerAccountType,
+)
+from app.modules.ledger.infrastructure.models import LedgerAccount
 from app.modules.payments.application.use_cases.post_payment import (
     PostPaymentUseCase,
 )
@@ -16,12 +27,64 @@ from app.modules.payments.domain.exceptions import (
     PaymentAllocationExceedsPaymentError,
     PaymentCurrencyMismatchError,
     PaymentNotFoundError,
+    PaymentNotFullyAllocatedError,
 )
 from app.modules.payments.infrastructure.models.payment import Payment
 from app.modules.payments.infrastructure.models.payment_allocation import (
     PaymentAllocation,
 )
 from tests.unit.payments.fakes import FakePaymentsUnitOfWork
+
+
+def make_ledger_account(
+    *,
+    tenant_id: UUID,
+    code: str,
+    name: str,
+    account_type: LedgerAccountType,
+    purpose: LedgerAccountPurpose,
+    status: LedgerAccountStatus = LedgerAccountStatus.ACTIVE,
+) -> LedgerAccount:
+    return LedgerAccount(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        code=code,
+        name=name,
+        type=account_type.value,
+        purpose=purpose.value,
+        status=status.value,
+    )
+
+
+def add_payment_ledger_accounts(
+    unit_of_work: FakePaymentsUnitOfWork,
+    *,
+    tenant_id: UUID,
+) -> tuple[LedgerAccount, LedgerAccount]:
+    cash = make_ledger_account(
+        tenant_id=tenant_id,
+        code="1000",
+        name="Cash",
+        account_type=LedgerAccountType.ASSET,
+        purpose=LedgerAccountPurpose.CASH,
+    )
+
+    accounts_receivable = make_ledger_account(
+        tenant_id=tenant_id,
+        code="1100",
+        name="Accounts Receivable",
+        account_type=LedgerAccountType.ASSET,
+        purpose=LedgerAccountPurpose.ACCOUNTS_RECEIVABLE,
+    )
+
+    unit_of_work.fake_ledger_accounts.items.extend(
+        [
+            cash,
+            accounts_receivable,
+        ]
+    )
+
+    return cash, accounts_receivable
 
 
 def make_payment(
@@ -88,6 +151,11 @@ async def test_post_partial_payment_keeps_invoice_issued() -> None:
 
     unit_of_work = FakePaymentsUnitOfWork()
 
+    add_payment_ledger_accounts(
+        unit_of_work,
+        tenant_id=tenant_id,
+    )
+
     payment = make_payment(
         tenant_id=tenant_id,
         customer_id=customer_id,
@@ -132,6 +200,11 @@ async def test_post_payment_marks_fully_paid_invoice_as_paid() -> None:
 
     unit_of_work = FakePaymentsUnitOfWork()
 
+    add_payment_ledger_accounts(
+        unit_of_work,
+        tenant_id=tenant_id,
+    )
+
     payment = make_payment(
         tenant_id=tenant_id,
         customer_id=customer_id,
@@ -175,6 +248,11 @@ async def test_post_payment_marks_invoice_paid_using_previous_posted_payment() -
     customer_id = uuid4()
 
     unit_of_work = FakePaymentsUnitOfWork()
+
+    add_payment_ledger_accounts(
+        unit_of_work,
+        tenant_id=tenant_id,
+    )
 
     previous_payment = make_payment(
         tenant_id=tenant_id,
@@ -328,6 +406,51 @@ async def test_post_payment_rejects_allocation_total_above_payment_amount() -> N
 
 
 @pytest.mark.asyncio
+async def test_post_payment_rejects_payment_that_is_not_fully_allocated() -> None:
+    tenant_id = uuid4()
+    customer_id = uuid4()
+
+    unit_of_work = FakePaymentsUnitOfWork()
+
+    payment = make_payment(
+        tenant_id=tenant_id,
+        customer_id=customer_id,
+        amount=Decimal("100.00"),
+    )
+
+    invoice = make_invoice(
+        tenant_id=tenant_id,
+        customer_id=customer_id,
+        total_amount=Decimal("100.00"),
+    )
+
+    allocation = make_allocation(
+        tenant_id=tenant_id,
+        payment_id=payment.id,
+        invoice_id=invoice.id,
+        amount=Decimal("60.00"),
+    )
+
+    unit_of_work.fake_payments.items.append(payment)
+    unit_of_work.fake_invoices.items.append(invoice)
+    unit_of_work.fake_payment_allocations.items.append(allocation)
+
+    use_case = PostPaymentUseCase(unit_of_work)
+
+    with pytest.raises(PaymentNotFullyAllocatedError):
+        await use_case.execute(
+            tenant_id=tenant_id,
+            payment_id=payment.id,
+        )
+
+    assert payment.status == PaymentStatus.DRAFT
+    assert payment.posted_at is None
+    assert invoice.status == InvoiceStatus.ISSUED
+    assert invoice.paid_at is None
+    assert unit_of_work.committed is False
+
+
+@pytest.mark.asyncio
 async def test_post_payment_rejects_invalid_invoice() -> None:
     tenant_id = uuid4()
     customer_id = uuid4()
@@ -458,3 +581,208 @@ async def test_post_payment_rejects_invoice_overpayment() -> None:
     assert current_payment.status == PaymentStatus.DRAFT
     assert invoice.status == InvoiceStatus.ISSUED
     assert unit_of_work.committed is False
+
+
+@pytest.mark.asyncio
+async def test_post_payment_creates_balanced_ledger_journal() -> None:
+    tenant_id = uuid4()
+    customer_id = uuid4()
+
+    unit_of_work = FakePaymentsUnitOfWork()
+
+    cash, accounts_receivable = add_payment_ledger_accounts(
+        unit_of_work,
+        tenant_id=tenant_id,
+    )
+
+    payment = make_payment(
+        tenant_id=tenant_id,
+        customer_id=customer_id,
+        amount=Decimal("100.00"),
+    )
+    invoice = make_invoice(
+        tenant_id=tenant_id,
+        customer_id=customer_id,
+        total_amount=Decimal("100.00"),
+    )
+    allocation = make_allocation(
+        tenant_id=tenant_id,
+        payment_id=payment.id,
+        invoice_id=invoice.id,
+        amount=Decimal("100.00"),
+    )
+
+    unit_of_work.fake_payments.items.append(payment)
+    unit_of_work.fake_invoices.items.append(invoice)
+    unit_of_work.fake_payment_allocations.items.append(allocation)
+
+    use_case = PostPaymentUseCase(unit_of_work)
+
+    await use_case.execute(
+        tenant_id=tenant_id,
+        payment_id=payment.id,
+    )
+
+    assert len(unit_of_work.fake_journal_entries.items) == 1
+
+    entry = unit_of_work.fake_journal_entries.items[0]
+
+    assert entry.tenant_id == tenant_id
+    assert entry.source_type == JournalSourceType.PAYMENT_POSTED.value
+    assert entry.source_id == payment.id
+
+    journal_lines = unit_of_work.fake_journal_lines.items
+
+    assert len(journal_lines) == 2
+
+    cash_line = next(line for line in journal_lines if line.ledger_account_id == cash.id)
+    receivable_line = next(
+        line for line in journal_lines if line.ledger_account_id == accounts_receivable.id
+    )
+
+    assert cash_line.debit == Decimal("100.00")
+    assert cash_line.credit == Decimal("0.00")
+
+    assert receivable_line.debit == Decimal("0.00")
+    assert receivable_line.credit == Decimal("100.00")
+
+    total_debit = sum(
+        (line.debit for line in journal_lines),
+        Decimal("0.00"),
+    )
+    total_credit = sum(
+        (line.credit for line in journal_lines),
+        Decimal("0.00"),
+    )
+
+    assert total_debit == Decimal("100.00")
+    assert total_credit == Decimal("100.00")
+    assert total_debit == total_credit
+
+    assert payment.status == PaymentStatus.POSTED
+    assert invoice.status == InvoiceStatus.PAID
+    assert unit_of_work.committed is True
+
+
+@pytest.mark.asyncio
+async def test_post_payment_rolls_back_when_cash_account_is_missing() -> None:
+    tenant_id = uuid4()
+    customer_id = uuid4()
+
+    unit_of_work = FakePaymentsUnitOfWork()
+
+    accounts_receivable = make_ledger_account(
+        tenant_id=tenant_id,
+        code="1100",
+        name="Accounts Receivable",
+        account_type=LedgerAccountType.ASSET,
+        purpose=LedgerAccountPurpose.ACCOUNTS_RECEIVABLE,
+    )
+    unit_of_work.fake_ledger_accounts.items.append(accounts_receivable)
+
+    payment = make_payment(
+        tenant_id=tenant_id,
+        customer_id=customer_id,
+        amount=Decimal("100.00"),
+    )
+    invoice = make_invoice(
+        tenant_id=tenant_id,
+        customer_id=customer_id,
+        total_amount=Decimal("100.00"),
+    )
+    allocation = make_allocation(
+        tenant_id=tenant_id,
+        payment_id=payment.id,
+        invoice_id=invoice.id,
+        amount=Decimal("100.00"),
+    )
+
+    unit_of_work.fake_payments.items.append(payment)
+    unit_of_work.fake_invoices.items.append(invoice)
+    unit_of_work.fake_payment_allocations.items.append(allocation)
+
+    use_case = PostPaymentUseCase(unit_of_work)
+
+    with pytest.raises(LedgerAccountNotFoundError):
+        await use_case.execute(
+            tenant_id=tenant_id,
+            payment_id=payment.id,
+        )
+
+    assert payment.status == PaymentStatus.DRAFT
+    assert payment.posted_at is None
+    assert invoice.status == InvoiceStatus.ISSUED
+    assert invoice.paid_at is None
+    assert unit_of_work.fake_journal_entries.items == []
+    assert unit_of_work.fake_journal_lines.items == []
+    assert unit_of_work.committed is False
+    assert unit_of_work.rolled_back is True
+
+
+@pytest.mark.asyncio
+async def test_post_payment_rolls_back_when_accounts_receivable_is_inactive() -> None:
+    tenant_id = uuid4()
+    customer_id = uuid4()
+
+    unit_of_work = FakePaymentsUnitOfWork()
+
+    cash = make_ledger_account(
+        tenant_id=tenant_id,
+        code="1000",
+        name="Cash",
+        account_type=LedgerAccountType.ASSET,
+        purpose=LedgerAccountPurpose.CASH,
+    )
+    accounts_receivable = make_ledger_account(
+        tenant_id=tenant_id,
+        code="1100",
+        name="Accounts Receivable",
+        account_type=LedgerAccountType.ASSET,
+        purpose=LedgerAccountPurpose.ACCOUNTS_RECEIVABLE,
+        status=LedgerAccountStatus.INACTIVE,
+    )
+
+    unit_of_work.fake_ledger_accounts.items.extend(
+        [
+            cash,
+            accounts_receivable,
+        ]
+    )
+
+    payment = make_payment(
+        tenant_id=tenant_id,
+        customer_id=customer_id,
+        amount=Decimal("100.00"),
+    )
+    invoice = make_invoice(
+        tenant_id=tenant_id,
+        customer_id=customer_id,
+        total_amount=Decimal("100.00"),
+    )
+    allocation = make_allocation(
+        tenant_id=tenant_id,
+        payment_id=payment.id,
+        invoice_id=invoice.id,
+        amount=Decimal("100.00"),
+    )
+
+    unit_of_work.fake_payments.items.append(payment)
+    unit_of_work.fake_invoices.items.append(invoice)
+    unit_of_work.fake_payment_allocations.items.append(allocation)
+
+    use_case = PostPaymentUseCase(unit_of_work)
+
+    with pytest.raises(LedgerAccountInactiveError):
+        await use_case.execute(
+            tenant_id=tenant_id,
+            payment_id=payment.id,
+        )
+
+    assert payment.status == PaymentStatus.DRAFT
+    assert payment.posted_at is None
+    assert invoice.status == InvoiceStatus.ISSUED
+    assert invoice.paid_at is None
+    assert unit_of_work.fake_journal_entries.items == []
+    assert unit_of_work.fake_journal_lines.items == []
+    assert unit_of_work.committed is False
+    assert unit_of_work.rolled_back is True

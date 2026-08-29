@@ -15,9 +15,19 @@ from app.modules.customers.infrastructure.models.customer import Customer
 from app.modules.customers.infrastructure.repositories.customer_repository import (
     CustomerRepository,
 )
+from app.modules.ledger.application.ports.repositories import (
+    JournalEntryRepository,
+    JournalLineRepository,
+    LedgerAccountRepository,
+)
 from app.modules.shipments.infrastructure.models.shipment import Shipment
 from app.modules.shipments.infrastructure.repositories.shipment_repository import (
     ShipmentRepository,
+)
+from tests.unit.ledger.fakes import (
+    FakeJournalEntryRepository,
+    FakeJournalLineRepository,
+    FakeLedgerAccountRepository,
 )
 
 
@@ -190,6 +200,10 @@ class FakeBillingUnitOfWork:
         self.fake_customers = FakeCustomerRepository()
         self.fake_shipments = FakeShipmentRepository()
 
+        self.fake_ledger_accounts = FakeLedgerAccountRepository()
+        self.fake_journal_entries = FakeJournalEntryRepository()
+        self.fake_journal_lines = FakeJournalLineRepository()
+
         self.invoices: InvoiceRepository = self.fake_invoices
         self.invoice_lines: InvoiceLineRepository = self.fake_invoice_lines
 
@@ -201,6 +215,10 @@ class FakeBillingUnitOfWork:
             ShipmentRepository,
             self.fake_shipments,
         )
+
+        self.ledger_accounts: LedgerAccountRepository = self.fake_ledger_accounts
+        self.journal_entries: JournalEntryRepository = self.fake_journal_entries
+        self.journal_lines: JournalLineRepository = self.fake_journal_lines
 
         self.committed = False
         self.rolled_back = False

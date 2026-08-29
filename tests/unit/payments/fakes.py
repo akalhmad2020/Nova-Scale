@@ -10,6 +10,11 @@ from app.modules.customers.application.ports.customer_repository import (
     CustomerRepository,
 )
 from app.modules.customers.infrastructure.models.customer import Customer
+from app.modules.ledger.application.ports.repositories import (
+    JournalEntryRepository,
+    JournalLineRepository,
+    LedgerAccountRepository,
+)
 from app.modules.payments.application.ports.payment_allocation_repository import (
     PaymentAllocationRepository,
 )
@@ -20,6 +25,11 @@ from app.modules.payments.domain.enums import PaymentStatus
 from app.modules.payments.infrastructure.models.payment import Payment
 from app.modules.payments.infrastructure.models.payment_allocation import (
     PaymentAllocation,
+)
+from tests.unit.ledger.fakes import (
+    FakeJournalEntryRepository,
+    FakeJournalLineRepository,
+    FakeLedgerAccountRepository,
 )
 
 
@@ -327,6 +337,14 @@ class FakePaymentsUnitOfWork:
         self.payment_allocations = self.fake_payment_allocations
         self.customers = self.fake_customers
         self.invoices = self.fake_invoices
+
+        self.fake_ledger_accounts = FakeLedgerAccountRepository()
+        self.fake_journal_entries = FakeJournalEntryRepository()
+        self.fake_journal_lines = FakeJournalLineRepository()
+
+        self.ledger_accounts: LedgerAccountRepository = self.fake_ledger_accounts
+        self.journal_entries: JournalEntryRepository = self.fake_journal_entries
+        self.journal_lines: JournalLineRepository = self.fake_journal_lines
 
         self.committed = False
         self.rolled_back = False

@@ -13,9 +13,6 @@ from app.modules.billing.application.use_cases.issue_invoice import (
 from app.modules.billing.application.use_cases.list_invoices import (
     ListInvoicesUseCase,
 )
-from app.modules.billing.application.use_cases.mark_invoice_paid import (
-    MarkInvoicePaidUseCase,
-)
 from app.modules.billing.application.use_cases.remove_invoice_line import (
     RemoveInvoiceLineUseCase,
 )
@@ -29,7 +26,6 @@ __all__ = [
     "GetInvoiceUseCase",
     "IssueInvoiceUseCase",
     "ListInvoicesUseCase",
-    "MarkInvoicePaidUseCase",
     "RemoveInvoiceLineUseCase",
     "VoidInvoiceUseCase",
 ]

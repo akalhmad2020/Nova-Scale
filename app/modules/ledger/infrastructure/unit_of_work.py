@@ -22,7 +22,7 @@ from app.modules.ledger.application.ports.repositories import (
     JournalLineRepository,
     LedgerAccountRepository,
 )
-from app.modules.ledger.infrastructure.repositories.sqlalchemy import (
+from app.modules.ledger.infrastructure.repositories import (
     SQLAlchemyJournalEntryRepository,
     SQLAlchemyJournalLineRepository,
     SQLAlchemyLedgerAccountRepository,
@@ -54,19 +54,12 @@ class SQLAlchemyBillingUnitOfWork:
 
         self.invoices = SQLAlchemyInvoiceRepository(self._session)
         self.invoice_lines = SQLAlchemyInvoiceLineRepository(self._session)
-
         self.customers = CustomerRepository(self._session)
         self.shipments = ShipmentRepository(self._session)
 
-        self.ledger_accounts = SQLAlchemyLedgerAccountRepository(
-            self._session,
-        )
-        self.journal_entries = SQLAlchemyJournalEntryRepository(
-            self._session,
-        )
-        self.journal_lines = SQLAlchemyJournalLineRepository(
-            self._session,
-        )
+        self.ledger_accounts = SQLAlchemyLedgerAccountRepository(self._session)
+        self.journal_entries = SQLAlchemyJournalEntryRepository(self._session)
+        self.journal_lines = SQLAlchemyJournalLineRepository(self._session)
 
         return self
 

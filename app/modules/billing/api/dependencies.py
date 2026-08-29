@@ -14,9 +14,6 @@ from app.modules.billing.application.use_cases.issue_invoice import (
 from app.modules.billing.application.use_cases.list_invoices import (
     ListInvoicesUseCase,
 )
-from app.modules.billing.application.use_cases.mark_invoice_paid import (
-    MarkInvoicePaidUseCase,
-)
 from app.modules.billing.application.use_cases.remove_invoice_line import (
     RemoveInvoiceLineUseCase,
 )
@@ -60,12 +57,6 @@ def get_remove_invoice_line_use_case() -> RemoveInvoiceLineUseCase:
 
 def get_issue_invoice_use_case() -> IssueInvoiceUseCase:
     return IssueInvoiceUseCase(
-        unit_of_work=SQLAlchemyBillingUnitOfWork(SessionFactory),
-    )
-
-
-def get_mark_invoice_paid_use_case() -> MarkInvoicePaidUseCase:
-    return MarkInvoicePaidUseCase(
         unit_of_work=SQLAlchemyBillingUnitOfWork(SessionFactory),
     )
 

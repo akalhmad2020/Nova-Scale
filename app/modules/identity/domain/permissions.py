@@ -73,7 +73,7 @@ class Permissions:
     INVOICE_CREATE = "invoice:create"
     INVOICE_UPDATE = "invoice:update"
     INVOICE_ISSUE = "invoice:issue"
-    INVOICE_MARK_PAID = "invoice:mark_paid"
+
     INVOICE_VOID = "invoice:void"
 
     PAYMENT_READ = "payment:read"
@@ -287,10 +287,6 @@ PERMISSION_CATALOG = (
     PermissionDefinition(
         code=Permissions.INVOICE_ISSUE,
         description="Issue invoices",
-    ),
-    PermissionDefinition(
-        code=Permissions.INVOICE_MARK_PAID,
-        description="Mark invoices as paid",
     ),
     PermissionDefinition(
         code=Permissions.INVOICE_VOID,

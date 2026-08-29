@@ -36,3 +36,7 @@ class PaymentCurrencyMismatchError(Exception):
 
 class InvalidInvoiceForPaymentError(Exception):
     pass
+
+
+class PaymentNotFullyAllocatedError(Exception):
+    pass
