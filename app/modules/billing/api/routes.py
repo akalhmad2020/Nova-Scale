@@ -9,7 +9,6 @@ from app.modules.billing.api.dependencies import (
     get_get_invoice_use_case,
     get_issue_invoice_use_case,
     get_list_invoices_use_case,
-    get_mark_invoice_paid_use_case,
     get_remove_invoice_line_use_case,
     get_void_invoice_use_case,
 )
@@ -45,9 +44,6 @@ from app.modules.billing.application.use_cases.issue_invoice import (
 from app.modules.billing.application.use_cases.list_invoices import (
     ListInvoicesUseCase,
 )
-from app.modules.billing.application.use_cases.mark_invoice_paid import (
-    MarkInvoicePaidUseCase,
-)
 from app.modules.billing.application.use_cases.remove_invoice_line import (
     RemoveInvoiceLineUseCase,
 )
@@ -57,6 +53,10 @@ from app.modules.billing.application.use_cases.void_invoice import (
 from app.modules.identity.api.auth_dependencies import require_permission
 from app.modules.identity.domain.permissions import Permissions
 from app.modules.identity.infrastructure.models.membership import Membership
+from app.modules.ledger.application.exceptions import (
+    LedgerAccountInactiveError,
+    LedgerAccountNotFoundError,
+)
 
 router = APIRouter(
     prefix="/tenants/{tenant_id}",
@@ -301,42 +301,15 @@ async def issue_invoice(
             status_code=status.HTTP_409_CONFLICT,
             detail="Invalid invoice state transition",
         ) from exc
-
-    return InvoiceResponse.model_validate(invoice)
-
-
-@router.post(
-    "/invoices/{invoice_id}/mark-paid",
-    response_model=InvoiceResponse,
-)
-async def mark_invoice_paid(
-    tenant_id: UUID,
-    invoice_id: UUID,
-    membership: Annotated[
-        Membership,
-        Depends(require_permission(Permissions.INVOICE_MARK_PAID)),
-    ],
-    use_case: Annotated[
-        MarkInvoicePaidUseCase,
-        Depends(get_mark_invoice_paid_use_case),
-    ],
-) -> InvoiceResponse:
-    del membership
-
-    try:
-        invoice = await use_case.execute(
-            tenant_id=tenant_id,
-            invoice_id=invoice_id,
-        )
-    except InvoiceNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Invoice not found",
-        ) from exc
-    except InvalidInvoiceStateTransitionError as exc:
+    except LedgerAccountNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Invalid invoice state transition",
+            detail="Required ledger account was not found",
+        ) from exc
+    except LedgerAccountInactiveError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Required ledger account is inactive",
         ) from exc
 
     return InvoiceResponse.model_validate(invoice)

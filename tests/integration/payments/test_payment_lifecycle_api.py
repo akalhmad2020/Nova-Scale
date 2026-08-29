@@ -30,6 +30,17 @@ from app.modules.identity.infrastructure.models.user import User
 from app.modules.identity.infrastructure.security.password_hasher import (
     Argon2PasswordHasher,
 )
+from app.modules.ledger.domain.enums import (
+    JournalSourceType,
+    LedgerAccountPurpose,
+    LedgerAccountStatus,
+    LedgerAccountType,
+)
+from app.modules.ledger.infrastructure.models import (
+    JournalEntry,
+    JournalLine,
+    LedgerAccount,
+)
 from app.modules.payments.domain.enums import PaymentMethod, PaymentStatus
 from app.modules.payments.infrastructure.models.payment import Payment
 from app.modules.payments.infrastructure.models.payment_allocation import (
@@ -82,6 +93,24 @@ async def cleanup_test_data(
             )
 
             if tenant_ids:
+                await session.execute(
+                    delete(JournalLine).where(
+                        JournalLine.tenant_id.in_(tenant_ids),
+                    )
+                )
+
+                await session.execute(
+                    delete(JournalEntry).where(
+                        JournalEntry.tenant_id.in_(tenant_ids),
+                    )
+                )
+
+                await session.execute(
+                    delete(LedgerAccount).where(
+                        LedgerAccount.tenant_id.in_(tenant_ids),
+                    )
+                )
+
                 await session.execute(
                     delete(PaymentAllocation).where(
                         PaymentAllocation.tenant_id.in_(tenant_ids),
@@ -155,6 +184,61 @@ async def cleanup_test_data(
                 )
 
             await session.commit()
+
+    finally:
+        await engine.dispose()
+
+
+async def create_payment_ledger_accounts(
+    *,
+    tenant_id: UUID,
+    cash_status: LedgerAccountStatus = LedgerAccountStatus.ACTIVE,
+    accounts_receivable_status: LedgerAccountStatus = LedgerAccountStatus.ACTIVE,
+) -> tuple[LedgerAccount, LedgerAccount]:
+    settings = get_settings()
+
+    engine = create_async_engine(
+        settings.database_url,
+        poolclass=NullPool,
+    )
+
+    session_factory = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autoflush=False,
+    )
+
+    try:
+        async with session_factory() as session:
+            cash = LedgerAccount(
+                tenant_id=tenant_id,
+                code="1000",
+                name="Cash",
+                type=LedgerAccountType.ASSET.value,
+                purpose=LedgerAccountPurpose.CASH.value,
+                status=cash_status.value,
+            )
+
+            accounts_receivable = LedgerAccount(
+                tenant_id=tenant_id,
+                code="1100",
+                name="Accounts Receivable",
+                type=LedgerAccountType.ASSET.value,
+                purpose=LedgerAccountPurpose.ACCOUNTS_RECEIVABLE.value,
+                status=accounts_receivable_status.value,
+            )
+
+            session.add_all(
+                [
+                    cash,
+                    accounts_receivable,
+                ]
+            )
+
+            await session.commit()
+
+            return cash, accounts_receivable
 
     finally:
         await engine.dispose()
@@ -418,7 +502,11 @@ async def test_post_payment_endpoint_posts_draft_payment() -> None:
         permission_codes=(Permissions.PAYMENT_POST,),
     )
 
-    payment, _ = await create_payment_with_invoice(
+    await create_payment_ledger_accounts(
+        tenant_id=tenant.id,
+    )
+
+    payment, invoice = await create_payment_with_invoice(
         tenant_id=tenant.id,
         customer_id=customer.id,
         payment_number="PAY-POST-001",
@@ -432,7 +520,7 @@ async def test_post_payment_endpoint_posts_draft_payment() -> None:
 
         with TestClient(app) as client:
             response = client.post(
-                (f"/api/v1/tenants/{tenant.id}/payments/{payment.id}/post"),
+                f"/api/v1/tenants/{tenant.id}/payments/{payment.id}/post",
                 headers={
                     "Authorization": f"Bearer {access_token}",
                 },
@@ -446,12 +534,96 @@ async def test_post_payment_endpoint_posts_draft_payment() -> None:
         assert body["status"] == PaymentStatus.POSTED.value
         assert body["posted_at"] is not None
 
-        persisted_payment = await get_payment(
-            payment_id=payment.id,
+        settings = get_settings()
+        engine = create_async_engine(
+            settings.database_url,
+            poolclass=NullPool,
+        )
+        session_factory = async_sessionmaker(
+            bind=engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+            autoflush=False,
         )
 
-        assert persisted_payment.status == PaymentStatus.POSTED
-        assert persisted_payment.posted_at is not None
+        try:
+            async with session_factory() as session:
+                persisted_payment = await session.get(Payment, payment.id)
+                persisted_invoice = await session.get(Invoice, invoice.id)
+
+                journal_entry = await session.scalar(
+                    select(JournalEntry).where(
+                        JournalEntry.tenant_id == tenant.id,
+                        JournalEntry.source_type == JournalSourceType.PAYMENT_POSTED.value,
+                        JournalEntry.source_id == payment.id,
+                    )
+                )
+
+                assert persisted_payment is not None
+                assert persisted_invoice is not None
+                assert persisted_payment.status == PaymentStatus.POSTED
+                assert persisted_payment.posted_at is not None
+                assert persisted_invoice.status == InvoiceStatus.PAID
+                assert persisted_invoice.paid_at is not None
+                assert journal_entry is not None
+
+                journal_lines = list(
+                    (
+                        await session.scalars(
+                            select(JournalLine).where(
+                                JournalLine.tenant_id == tenant.id,
+                                JournalLine.journal_entry_id == journal_entry.id,
+                            )
+                        )
+                    ).all()
+                )
+
+                assert len(journal_lines) == 2
+
+                cash_account = await session.scalar(
+                    select(LedgerAccount).where(
+                        LedgerAccount.tenant_id == tenant.id,
+                        LedgerAccount.purpose == LedgerAccountPurpose.CASH.value,
+                    )
+                )
+                accounts_receivable = await session.scalar(
+                    select(LedgerAccount).where(
+                        LedgerAccount.tenant_id == tenant.id,
+                        LedgerAccount.purpose == LedgerAccountPurpose.ACCOUNTS_RECEIVABLE.value,
+                    )
+                )
+
+                assert cash_account is not None
+                assert accounts_receivable is not None
+
+                cash_line = next(
+                    line for line in journal_lines if line.ledger_account_id == cash_account.id
+                )
+                accounts_receivable_line = next(
+                    line
+                    for line in journal_lines
+                    if line.ledger_account_id == accounts_receivable.id
+                )
+
+                assert cash_line.debit == Decimal("100.00")
+                assert cash_line.credit == Decimal("0.00")
+                assert accounts_receivable_line.debit == Decimal("0.00")
+                assert accounts_receivable_line.credit == Decimal("100.00")
+
+                total_debit = sum(
+                    (line.debit for line in journal_lines),
+                    Decimal("0.00"),
+                )
+                total_credit = sum(
+                    (line.credit for line in journal_lines),
+                    Decimal("0.00"),
+                )
+
+                assert total_debit == Decimal("100.00")
+                assert total_credit == Decimal("100.00")
+                assert total_debit == total_credit
+        finally:
+            await engine.dispose()
 
     finally:
         await cleanup_test_data(
@@ -492,7 +664,7 @@ async def test_void_payment_endpoint_voids_draft_payment() -> None:
 
         with TestClient(app) as client:
             response = client.post(
-                (f"/api/v1/tenants/{tenant.id}/payments/{payment.id}/void"),
+                f"/api/v1/tenants/{tenant.id}/payments/{payment.id}/void",
                 headers={
                     "Authorization": f"Bearer {access_token}",
                 },
@@ -698,6 +870,10 @@ async def test_post_partial_payment_keeps_invoice_issued() -> None:
         permission_codes=(Permissions.PAYMENT_POST,),
     )
 
+    await create_payment_ledger_accounts(
+        tenant_id=tenant.id,
+    )
+
     payment, invoice = await create_payment_with_invoice(
         tenant_id=tenant.id,
         customer_id=customer.id,
@@ -774,6 +950,10 @@ async def test_post_final_payment_marks_invoice_paid() -> None:
         tenant_slug=tenant_slug,
         role_name=role_name,
         permission_codes=(Permissions.PAYMENT_POST,),
+    )
+
+    await create_payment_ledger_accounts(
+        tenant_id=tenant.id,
     )
 
     settings = get_settings()
@@ -905,6 +1085,95 @@ async def test_post_final_payment_marks_invoice_paid() -> None:
     finally:
         await engine.dispose()
 
+        await cleanup_test_data(
+            email=email,
+            tenant_slugs=(tenant_slug,),
+            role_name=role_name,
+        )
+
+
+@pytest.mark.integration
+async def test_post_payment_rolls_back_when_ledger_account_is_inactive() -> None:
+    unique = uuid4()
+
+    email = f"payments-ledger-rollback-{unique}@example.com"
+    password = "very-secure-payments-password"
+    tenant_slug = f"payments-ledger-rollback-tenant-{unique}"
+    role_name = f"payments-ledger-rollback-role-{unique}"
+
+    tenant, customer = await create_lifecycle_context(
+        email=email,
+        password=password,
+        tenant_slug=tenant_slug,
+        role_name=role_name,
+        permission_codes=(Permissions.PAYMENT_POST,),
+    )
+
+    await create_payment_ledger_accounts(
+        tenant_id=tenant.id,
+        accounts_receivable_status=LedgerAccountStatus.INACTIVE,
+    )
+
+    payment, invoice = await create_payment_with_invoice(
+        tenant_id=tenant.id,
+        customer_id=customer.id,
+        payment_number="PAY-LEDGER-ROLLBACK-001",
+    )
+
+    try:
+        access_token = login_and_get_access_token(
+            email=email,
+            password=password,
+        )
+
+        with TestClient(app) as client:
+            response = client.post(
+                f"/api/v1/tenants/{tenant.id}/payments/{payment.id}/post",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                },
+            )
+
+        assert response.status_code == 409
+        assert response.json() == {"detail": "Required ledger account is inactive"}
+
+        settings = get_settings()
+        engine = create_async_engine(
+            settings.database_url,
+            poolclass=NullPool,
+        )
+        session_factory = async_sessionmaker(
+            bind=engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+            autoflush=False,
+        )
+
+        try:
+            async with session_factory() as session:
+                persisted_payment = await session.get(Payment, payment.id)
+                persisted_invoice = await session.get(Invoice, invoice.id)
+
+                journal_entry = await session.scalar(
+                    select(JournalEntry).where(
+                        JournalEntry.tenant_id == tenant.id,
+                        JournalEntry.source_type == JournalSourceType.PAYMENT_POSTED.value,
+                        JournalEntry.source_id == payment.id,
+                    )
+                )
+
+                assert persisted_payment is not None
+                assert persisted_invoice is not None
+
+                assert persisted_payment.status == PaymentStatus.DRAFT
+                assert persisted_payment.posted_at is None
+                assert persisted_invoice.status == InvoiceStatus.ISSUED
+                assert persisted_invoice.paid_at is None
+                assert journal_entry is None
+        finally:
+            await engine.dispose()
+
+    finally:
         await cleanup_test_data(
             email=email,
             tenant_slugs=(tenant_slug,),

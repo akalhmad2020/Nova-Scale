@@ -12,6 +12,17 @@ from app.modules.customers.domain.enums import CustomerStatus
 from app.modules.customers.infrastructure.models.customer import Customer
 from app.modules.identity.domain.enums import TenantStatus
 from app.modules.identity.infrastructure.models.tenant import Tenant
+from app.modules.ledger.domain.enums import (
+    JournalSourceType,
+    LedgerAccountPurpose,
+    LedgerAccountStatus,
+    LedgerAccountType,
+)
+from app.modules.ledger.infrastructure.models import (
+    JournalEntry,
+    JournalLine,
+    LedgerAccount,
+)
 from app.modules.payments.application.use_cases.post_payment import (
     PostPaymentUseCase,
 )
@@ -34,11 +45,11 @@ async def test_concurrent_post_payments_do_not_overpay_invoice(
 ) -> None:
     unique = uuid4()
 
-    tenant_id = None
-    customer_id = None
-    invoice_id = None
-    payment_a_id = None
-    payment_b_id = None
+    tenant_id: UUID | None = None
+    customer_id: UUID | None = None
+    invoice_id: UUID | None = None
+    payment_a_id: UUID | None = None
+    payment_b_id: UUID | None = None
 
     async with session_factory() as setup_session:
         tenant = Tenant(
@@ -70,6 +81,31 @@ async def test_concurrent_post_payments_do_not_overpay_invoice(
         )
         setup_session.add(invoice)
         await setup_session.flush()
+
+        cash_account = LedgerAccount(
+            tenant_id=tenant.id,
+            code="1000",
+            name="Cash",
+            type=LedgerAccountType.ASSET.value,
+            purpose=LedgerAccountPurpose.CASH.value,
+            status=LedgerAccountStatus.ACTIVE.value,
+        )
+
+        accounts_receivable = LedgerAccount(
+            tenant_id=tenant.id,
+            code="1100",
+            name="Accounts Receivable",
+            type=LedgerAccountType.ASSET.value,
+            purpose=LedgerAccountPurpose.ACCOUNTS_RECEIVABLE.value,
+            status=LedgerAccountStatus.ACTIVE.value,
+        )
+
+        setup_session.add_all(
+            [
+                cash_account,
+                accounts_receivable,
+            ]
+        )
 
         payment_a = Payment(
             tenant_id=tenant.id,
@@ -151,12 +187,10 @@ async def test_concurrent_post_payments_do_not_overpay_invoice(
         )
 
         successful_results = [result for result in results if isinstance(result, Payment)]
-
         failed_results = [result for result in results if isinstance(result, BaseException)]
 
         assert len(successful_results) == 1
         assert len(failed_results) == 1
-
         assert isinstance(
             failed_results[0],
             InvalidInvoiceForPaymentError,
@@ -197,7 +231,6 @@ async def test_concurrent_post_payments_do_not_overpay_invoice(
             posted_payments = [
                 payment for payment in persisted_payments if payment.status == PaymentStatus.POSTED
             ]
-
             draft_payments = [
                 payment for payment in persisted_payments if payment.status == PaymentStatus.DRAFT
             ]
@@ -205,7 +238,8 @@ async def test_concurrent_post_payments_do_not_overpay_invoice(
             assert len(posted_payments) == 1
             assert len(draft_payments) == 1
 
-            posted_payment_ids = {payment.id for payment in posted_payments}
+            posted_payment = posted_payments[0]
+            draft_payment = draft_payments[0]
 
             posted_allocations = list(
                 (
@@ -213,7 +247,7 @@ async def test_concurrent_post_payments_do_not_overpay_invoice(
                         select(PaymentAllocation).where(
                             PaymentAllocation.tenant_id == tenant_id,
                             PaymentAllocation.invoice_id == invoice_id,
-                            PaymentAllocation.payment_id.in_(posted_payment_ids),
+                            PaymentAllocation.payment_id == posted_payment.id,
                         )
                     )
                 ).all()
@@ -226,8 +260,113 @@ async def test_concurrent_post_payments_do_not_overpay_invoice(
 
             assert posted_total == Decimal("100.00")
 
+            journal_entries = list(
+                (
+                    await verification_session.scalars(
+                        select(JournalEntry).where(
+                            JournalEntry.tenant_id == tenant_id,
+                            JournalEntry.source_type == JournalSourceType.PAYMENT_POSTED.value,
+                        )
+                    )
+                ).all()
+            )
+
+            assert len(journal_entries) == 1
+
+            journal_entry = journal_entries[0]
+
+            assert journal_entry.source_id == posted_payment.id
+            assert journal_entry.source_id != draft_payment.id
+
+            journal_lines = list(
+                (
+                    await verification_session.scalars(
+                        select(JournalLine).where(
+                            JournalLine.tenant_id == tenant_id,
+                            JournalLine.journal_entry_id == journal_entry.id,
+                        )
+                    )
+                ).all()
+            )
+
+            assert len(journal_lines) == 2
+
+            persisted_cash_account = await verification_session.scalar(
+                select(LedgerAccount).where(
+                    LedgerAccount.tenant_id == tenant_id,
+                    LedgerAccount.purpose == LedgerAccountPurpose.CASH.value,
+                )
+            )
+            persisted_accounts_receivable = await verification_session.scalar(
+                select(LedgerAccount).where(
+                    LedgerAccount.tenant_id == tenant_id,
+                    LedgerAccount.purpose == LedgerAccountPurpose.ACCOUNTS_RECEIVABLE.value,
+                )
+            )
+
+            assert persisted_cash_account is not None
+            assert persisted_accounts_receivable is not None
+
+            cash_line = next(
+                line
+                for line in journal_lines
+                if line.ledger_account_id == persisted_cash_account.id
+            )
+            accounts_receivable_line = next(
+                line
+                for line in journal_lines
+                if line.ledger_account_id == persisted_accounts_receivable.id
+            )
+
+            assert cash_line.debit == Decimal("100.00")
+            assert cash_line.credit == Decimal("0.00")
+
+            assert accounts_receivable_line.debit == Decimal("0.00")
+            assert accounts_receivable_line.credit == Decimal("100.00")
+
+            total_debit = sum(
+                (line.debit for line in journal_lines),
+                Decimal("0.00"),
+            )
+            total_credit = sum(
+                (line.credit for line in journal_lines),
+                Decimal("0.00"),
+            )
+
+            assert total_debit == Decimal("100.00")
+            assert total_credit == Decimal("100.00")
+            assert total_debit == total_credit
+
+            failed_payment_journal = await verification_session.scalar(
+                select(JournalEntry).where(
+                    JournalEntry.tenant_id == tenant_id,
+                    JournalEntry.source_type == JournalSourceType.PAYMENT_POSTED.value,
+                    JournalEntry.source_id == draft_payment.id,
+                )
+            )
+
+            assert failed_payment_journal is None
+
     finally:
         async with session_factory() as cleanup_session:
+            await cleanup_session.execute(
+                delete(JournalLine).where(
+                    JournalLine.tenant_id == tenant_id,
+                )
+            )
+
+            await cleanup_session.execute(
+                delete(JournalEntry).where(
+                    JournalEntry.tenant_id == tenant_id,
+                )
+            )
+
+            await cleanup_session.execute(
+                delete(LedgerAccount).where(
+                    LedgerAccount.tenant_id == tenant_id,
+                )
+            )
+
             await cleanup_session.execute(
                 delete(PaymentAllocation).where(
                     PaymentAllocation.tenant_id == tenant_id,

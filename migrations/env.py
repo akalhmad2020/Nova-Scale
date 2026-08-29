@@ -15,6 +15,11 @@ from app.modules.carriers.infrastructure.models import (  # noqa: F401
 from app.modules.customers.infrastructure.models import Customer  # noqa: F401
 from app.modules.documents.infrastructure.models import Document, ShipmentLabel  # noqa: F401
 from app.modules.identity.infrastructure import models  # noqa: F401
+from app.modules.ledger.infrastructure.models import (  # noqa: F401
+    JournalEntry,
+    JournalLine,
+    LedgerAccount,
+)
 from app.modules.locations.infrastructure.models import Location  # noqa: F401
 from app.modules.packages.infrastructure.models import Package  # noqa: F401
 from app.modules.payments.infrastructure.models.payment import Payment  # noqa: F401

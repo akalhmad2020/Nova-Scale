@@ -6,6 +6,11 @@ from app.modules.billing.application.ports.invoice_repository import (
 from app.modules.customers.application.ports.customer_repository import (
     CustomerRepository,
 )
+from app.modules.ledger.application.ports.repositories import (
+    JournalEntryRepository,
+    JournalLineRepository,
+    LedgerAccountRepository,
+)
 from app.modules.payments.application.ports.payment_allocation_repository import (
     PaymentAllocationRepository,
 )
@@ -19,6 +24,10 @@ class PaymentsUnitOfWork(Protocol):
     payment_allocations: PaymentAllocationRepository
     customers: CustomerRepository
     invoices: InvoiceRepository
+
+    ledger_accounts: LedgerAccountRepository
+    journal_entries: JournalEntryRepository
+    journal_lines: JournalLineRepository
 
     async def __aenter__(self) -> "PaymentsUnitOfWork": ...
 

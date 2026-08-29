@@ -10,6 +10,11 @@ from app.modules.billing.application.ports.invoice_repository import (
 from app.modules.customers.infrastructure.repositories.customer_repository import (
     CustomerRepository,
 )
+from app.modules.ledger.application.ports.repositories import (
+    JournalEntryRepository,
+    JournalLineRepository,
+    LedgerAccountRepository,
+)
 from app.modules.shipments.infrastructure.repositories.shipment_repository import (
     ShipmentRepository,
 )
@@ -20,6 +25,10 @@ class BillingUnitOfWork(Protocol):
     invoice_lines: InvoiceLineRepository
     customers: CustomerRepository
     shipments: ShipmentRepository
+
+    ledger_accounts: LedgerAccountRepository
+    journal_entries: JournalEntryRepository
+    journal_lines: JournalLineRepository
 
     async def __aenter__(self) -> Self: ...
 

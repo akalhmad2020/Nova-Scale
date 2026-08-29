@@ -4,6 +4,16 @@ from uuid import UUID
 
 from app.modules.billing.domain.enums import InvoiceStatus
 from app.modules.billing.infrastructure.models.invoice import Invoice
+from app.modules.ledger.application.exceptions import LedgerAccountNotFoundError
+from app.modules.ledger.application.services import (
+    JournalLineInput,
+    JournalPostingService,
+)
+from app.modules.ledger.domain.enums import (
+    JournalSourceType,
+    LedgerAccountPurpose,
+)
+from app.modules.ledger.infrastructure.models import LedgerAccount
 from app.modules.payments.application.ports.unit_of_work import (
     PaymentsUnitOfWork,
 )
@@ -15,6 +25,7 @@ from app.modules.payments.domain.exceptions import (
     PaymentAllocationExceedsPaymentError,
     PaymentCurrencyMismatchError,
     PaymentNotFoundError,
+    PaymentNotFullyAllocatedError,
 )
 from app.modules.payments.infrastructure.models.payment import Payment
 
@@ -101,7 +112,47 @@ class PostPaymentUseCase:
                 if new_total == invoice.total_amount:
                     invoices_to_mark_paid.append(invoice)
 
+            if allocation_total < payment.amount:
+                raise PaymentNotFullyAllocatedError
+
+            cash_account = await self._get_ledger_account(
+                tenant_id=tenant_id,
+                purpose=LedgerAccountPurpose.CASH,
+            )
+            accounts_receivable = await self._get_ledger_account(
+                tenant_id=tenant_id,
+                purpose=LedgerAccountPurpose.ACCOUNTS_RECEIVABLE,
+            )
+
             now = datetime.now(UTC)
+
+            journal_posting = JournalPostingService(
+                accounts=self._unit_of_work.ledger_accounts,
+                journal_entries=self._unit_of_work.journal_entries,
+                journal_lines=self._unit_of_work.journal_lines,
+            )
+
+            await journal_posting.post(
+                tenant_id=tenant_id,
+                source_type=JournalSourceType.PAYMENT_POSTED.value,
+                source_id=payment.id,
+                description=f"Payment {payment.payment_number} posted",
+                posted_at=now,
+                lines=[
+                    JournalLineInput(
+                        ledger_account_id=cash_account.id,
+                        debit=payment.amount,
+                        credit=Decimal("0.00"),
+                        description=f"Payment {payment.payment_number}",
+                    ),
+                    JournalLineInput(
+                        ledger_account_id=accounts_receivable.id,
+                        debit=Decimal("0.00"),
+                        credit=payment.amount,
+                        description=f"Payment {payment.payment_number}",
+                    ),
+                ],
+            )
 
             payment.status = PaymentStatus.POSTED
             payment.posted_at = now
@@ -118,3 +169,21 @@ class PostPaymentUseCase:
                 await self._unit_of_work.invoices.refresh(invoice)
 
             return payment
+
+    async def _get_ledger_account(
+        self,
+        *,
+        tenant_id: UUID,
+        purpose: LedgerAccountPurpose,
+    ) -> LedgerAccount:
+        account = await self._unit_of_work.ledger_accounts.get_by_purpose(
+            tenant_id,
+            purpose.value,
+        )
+
+        if account is None:
+            raise LedgerAccountNotFoundError(
+                f"Ledger account for purpose '{purpose.value}' was not found."
+            )
+
+        return account

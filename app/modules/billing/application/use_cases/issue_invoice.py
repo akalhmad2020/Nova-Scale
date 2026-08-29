@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from decimal import Decimal
 from uuid import UUID
 
 from app.modules.billing.application.exceptions import (
@@ -14,6 +15,20 @@ from app.modules.billing.domain.lifecycle import (
     can_transition_invoice_status,
 )
 from app.modules.billing.infrastructure.models.invoice import Invoice
+from app.modules.ledger.application.exceptions import (
+    LedgerAccountInactiveError,
+    LedgerAccountNotFoundError,
+)
+from app.modules.ledger.application.services import (
+    JournalLineInput,
+    JournalPostingService,
+)
+from app.modules.ledger.domain.enums import (
+    JournalSourceType,
+    LedgerAccountPurpose,
+    LedgerAccountStatus,
+)
+from app.modules.ledger.infrastructure.models import LedgerAccount
 
 
 class IssueInvoiceUseCase:
@@ -30,7 +45,7 @@ class IssueInvoiceUseCase:
         invoice_id: UUID,
     ) -> Invoice:
         async with self._unit_of_work:
-            invoice = await self._unit_of_work.invoices.get_by_id(
+            invoice = await self._unit_of_work.invoices.get_by_id_for_update(
                 tenant_id=tenant_id,
                 invoice_id=invoice_id,
             )
@@ -56,9 +71,93 @@ class IssueInvoiceUseCase:
                     "Invoice must contain at least one line before issuing."
                 )
 
+            accounts_receivable = await self._get_active_ledger_account(
+                tenant_id=tenant_id,
+                purpose=LedgerAccountPurpose.ACCOUNTS_RECEIVABLE,
+            )
+
+            revenue = await self._get_active_ledger_account(
+                tenant_id=tenant_id,
+                purpose=LedgerAccountPurpose.REVENUE,
+            )
+
+            tax_payable: LedgerAccount | None = None
+
+            if invoice.tax_amount > Decimal("0.00"):
+                tax_payable = await self._get_active_ledger_account(
+                    tenant_id=tenant_id,
+                    purpose=LedgerAccountPurpose.TAX_PAYABLE,
+                )
+
+            issued_at = datetime.now(UTC)
+
+            journal_lines = [
+                JournalLineInput(
+                    ledger_account_id=accounts_receivable.id,
+                    debit=invoice.total_amount,
+                    credit=Decimal("0.00"),
+                    description=f"Invoice {invoice.invoice_number}",
+                ),
+                JournalLineInput(
+                    ledger_account_id=revenue.id,
+                    debit=Decimal("0.00"),
+                    credit=invoice.subtotal,
+                    description=f"Invoice {invoice.invoice_number}",
+                ),
+            ]
+
+            if tax_payable is not None:
+                journal_lines.append(
+                    JournalLineInput(
+                        ledger_account_id=tax_payable.id,
+                        debit=Decimal("0.00"),
+                        credit=invoice.tax_amount,
+                        description=f"Invoice {invoice.invoice_number} tax",
+                    )
+                )
+
+            journal_posting = JournalPostingService(
+                accounts=self._unit_of_work.ledger_accounts,
+                journal_entries=self._unit_of_work.journal_entries,
+                journal_lines=self._unit_of_work.journal_lines,
+            )
+
+            await journal_posting.post(
+                tenant_id=tenant_id,
+                source_type=JournalSourceType.INVOICE_ISSUED.value,
+                source_id=invoice.id,
+                description=f"Invoice {invoice.invoice_number} issued",
+                posted_at=issued_at,
+                lines=journal_lines,
+            )
+
             invoice.status = InvoiceStatus.ISSUED
-            invoice.issued_at = datetime.now(UTC)
+            invoice.issued_at = issued_at
 
             await self._unit_of_work.commit()
             await self._unit_of_work.invoices.refresh(invoice)
+
             return invoice
+
+    async def _get_active_ledger_account(
+        self,
+        *,
+        tenant_id: UUID,
+        purpose: LedgerAccountPurpose,
+    ) -> LedgerAccount:
+        account = await self._unit_of_work.ledger_accounts.get_by_purpose(
+            tenant_id,
+            purpose.value,
+        )
+
+        if account is None:
+            raise LedgerAccountNotFoundError(
+                f"Ledger account for purpose '{purpose.value}' was not found."
+            )
+
+        if account.status != LedgerAccountStatus.ACTIVE.value:
+            raise LedgerAccountInactiveError(
+                f"Ledger account for purpose '{purpose.value}' is inactive."
+            )
+
+        return account

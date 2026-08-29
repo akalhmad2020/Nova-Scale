@@ -12,6 +12,16 @@ from app.modules.customers.application.ports.customer_repository import (
 from app.modules.customers.infrastructure.repositories.customer_repository import (
     CustomerRepository as SQLAlchemyCustomerRepository,
 )
+from app.modules.ledger.application.ports.repositories import (
+    JournalEntryRepository,
+    JournalLineRepository,
+    LedgerAccountRepository,
+)
+from app.modules.ledger.infrastructure.repositories.sqlalchemy import (
+    SQLAlchemyJournalEntryRepository,
+    SQLAlchemyJournalLineRepository,
+    SQLAlchemyLedgerAccountRepository,
+)
 from app.modules.payments.application.ports.payment_allocation_repository import (
     PaymentAllocationRepository,
 )
@@ -39,6 +49,14 @@ class SQLAlchemyPaymentsUnitOfWork:
         )
         self.customers: CustomerRepositoryPort = SQLAlchemyCustomerRepository(self._session)
         self.invoices: InvoiceRepository = SQLAlchemyInvoiceRepository(self._session)
+
+        self.ledger_accounts: LedgerAccountRepository = SQLAlchemyLedgerAccountRepository(
+            self._session
+        )
+        self.journal_entries: JournalEntryRepository = SQLAlchemyJournalEntryRepository(
+            self._session
+        )
+        self.journal_lines: JournalLineRepository = SQLAlchemyJournalLineRepository(self._session)
 
     async def __aenter__(self) -> "SQLAlchemyPaymentsUnitOfWork":
         return self
