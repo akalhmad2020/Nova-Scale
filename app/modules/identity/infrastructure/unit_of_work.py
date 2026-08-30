@@ -26,6 +26,9 @@ from app.modules.identity.infrastructure.repositories.tenant_repository import (
 from app.modules.identity.infrastructure.repositories.user_repository import (
     UserRepository as SQLAlchemyUserRepository,
 )
+from app.modules.ledger.infrastructure.repositories import (
+    SQLAlchemyLedgerAccountRepository,
+)
 
 
 class SQLAlchemyUnitOfWork:
@@ -35,6 +38,7 @@ class SQLAlchemyUnitOfWork:
     ) -> None:
         self._session_factory = session_factory
         self._session: AsyncSession | None = None
+
         self._users: SQLAlchemyUserRepository | None = None
         self._auth_sessions: SQLAlchemyAuthSessionRepository | None = None
         self._tenants: SQLAlchemyTenantRepository | None = None
@@ -43,6 +47,7 @@ class SQLAlchemyUnitOfWork:
         self._permissions: SQLAlchemyPermissionRepository | None = None
         self._role_permissions: SQLAlchemyRolePermissionRepository | None = None
         self._invitations: SQLAlchemyInvitationRepository | None = None
+        self._ledger_accounts: SQLAlchemyLedgerAccountRepository | None = None
 
     @property
     def users(self) -> SQLAlchemyUserRepository:
@@ -70,6 +75,7 @@ class SQLAlchemyUnitOfWork:
         self._permissions = SQLAlchemyPermissionRepository(session)
         self._role_permissions = SQLAlchemyRolePermissionRepository(session)
         self._invitations = SQLAlchemyInvitationRepository(session)
+        self._ledger_accounts = SQLAlchemyLedgerAccountRepository(session)
 
         return self
 
@@ -80,12 +86,14 @@ class SQLAlchemyUnitOfWork:
         traceback: TracebackType | None,
     ) -> None:
         session = self._session
+
         self._tenants = None
         self._memberships = None
         self._roles = None
         self._permissions = None
         self._role_permissions = None
         self._invitations = None
+        self._ledger_accounts = None
 
         if session is None:
             return
@@ -158,3 +166,10 @@ class SQLAlchemyUnitOfWork:
             raise RuntimeError("Unit of work is not active")
 
         return self._invitations
+
+    @property
+    def ledger_accounts(self) -> SQLAlchemyLedgerAccountRepository:
+        if self._ledger_accounts is None:
+            raise RuntimeError("Unit of work is not active")
+
+        return self._ledger_accounts

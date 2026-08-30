@@ -18,6 +18,9 @@ from app.modules.ledger.application.ports.repositories import (
 from app.modules.shipments.infrastructure.repositories.shipment_repository import (
     ShipmentRepository,
 )
+from app.shared.outbox.application.ports.repositories import (
+    OutboxMessageRepository,
+)
 
 
 class BillingUnitOfWork(Protocol):
@@ -29,6 +32,8 @@ class BillingUnitOfWork(Protocol):
     ledger_accounts: LedgerAccountRepository
     journal_entries: JournalEntryRepository
     journal_lines: JournalLineRepository
+
+    outbox_messages: OutboxMessageRepository
 
     async def __aenter__(self) -> Self: ...
 

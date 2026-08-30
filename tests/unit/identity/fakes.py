@@ -12,6 +12,7 @@ from app.modules.identity.infrastructure.models.role_permission import (
 )
 from app.modules.identity.infrastructure.models.tenant import Tenant
 from app.modules.identity.infrastructure.models.user import User
+from app.modules.ledger.infrastructure.models import LedgerAccount
 
 
 class FakeUserRepository:
@@ -283,7 +284,6 @@ class FakeInvitationRepository:
         email: str,
         tenant_id: UUID,
     ) -> Invitation | None:
-
         return next(
             (
                 invitation
@@ -300,6 +300,51 @@ class FakeInvitationRepository:
         invitation: Invitation,
     ) -> None:
         self.invitations.append(invitation)
+
+
+class FakeLedgerAccountRepository:
+    def __init__(self) -> None:
+        self.accounts: list[LedgerAccount] = []
+
+    async def add(
+        self,
+        account: LedgerAccount,
+    ) -> None:
+        self.accounts.append(account)
+
+    async def get_by_id(
+        self,
+        tenant_id: UUID,
+        account_id: UUID,
+    ) -> LedgerAccount | None:
+        return next(
+            (
+                account
+                for account in self.accounts
+                if account.tenant_id == tenant_id and account.id == account_id
+            ),
+            None,
+        )
+
+    async def get_by_purpose(
+        self,
+        tenant_id: UUID,
+        purpose: str,
+    ) -> LedgerAccount | None:
+        return next(
+            (
+                account
+                for account in self.accounts
+                if account.tenant_id == tenant_id and account.purpose == purpose
+            ),
+            None,
+        )
+
+    async def list_by_tenant(
+        self,
+        tenant_id: UUID,
+    ) -> list[LedgerAccount]:
+        return [account for account in self.accounts if account.tenant_id == tenant_id]
 
 
 class FakeUnitOfWork:
@@ -319,6 +364,7 @@ class FakeUnitOfWork:
         self._role_permissions.permissions = self._permissions.permissions
 
         self._invitations = FakeInvitationRepository()
+        self._ledger_accounts = FakeLedgerAccountRepository()
 
     @property
     def users(self) -> FakeUserRepository:
@@ -372,3 +418,7 @@ class FakeUnitOfWork:
     @property
     def role_permissions(self) -> FakeRolePermissionRepository:
         return self._role_permissions
+
+    @property
+    def ledger_accounts(self) -> FakeLedgerAccountRepository:
+        return self._ledger_accounts

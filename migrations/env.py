@@ -21,6 +21,12 @@ from app.modules.ledger.infrastructure.models import (  # noqa: F401
     LedgerAccount,
 )
 from app.modules.locations.infrastructure.models import Location  # noqa: F401
+from app.modules.notifications.infrastructure.models.notification import (  # noqa: F401
+    Notification,
+)
+from app.modules.notifications.infrastructure.models.notification_attempt import (  # noqa: F401
+    NotificationAttempt,
+)
 from app.modules.packages.infrastructure.models import Package  # noqa: F401
 from app.modules.payments.infrastructure.models.payment import Payment  # noqa: F401
 from app.modules.payments.infrastructure.models.payment_allocation import (  # noqa: F401
@@ -31,6 +37,7 @@ from app.modules.rates.infrastructure.models.rate_quote import RateQuote  # noqa
 from app.modules.shipment_events.infrastructure.models import ShipmentEvent  # noqa: F401
 from app.modules.shipments.infrastructure.models import Shipment  # noqa: F401
 from app.shared.infrastructure.database import Base
+from app.shared.outbox.infrastructure.models import OutboxMessage  # noqa: F401
 
 config = context.config
 

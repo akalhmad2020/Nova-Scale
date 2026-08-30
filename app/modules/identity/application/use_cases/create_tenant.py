@@ -11,6 +11,11 @@ from app.modules.identity.domain.enums import (
 )
 from app.modules.identity.infrastructure.models.membership import Membership
 from app.modules.identity.infrastructure.models.tenant import Tenant
+from app.modules.ledger.application.use_cases.bootstrap_accounts import (
+    SYSTEM_LEDGER_ACCOUNTS,
+)
+from app.modules.ledger.domain.enums import LedgerAccountStatus
+from app.modules.ledger.infrastructure.models import LedgerAccount
 
 
 @dataclass(frozen=True)
@@ -71,6 +76,18 @@ class CreateTenant:
             )
 
             uow.memberships.add(membership)
+
+            for definition in SYSTEM_LEDGER_ACCOUNTS:
+                account = LedgerAccount(
+                    tenant_id=tenant.id,
+                    code=definition.code,
+                    name=definition.name,
+                    type=definition.type.value,
+                    purpose=definition.purpose.value,
+                    status=LedgerAccountStatus.ACTIVE.value,
+                )
+
+                await uow.ledger_accounts.add(account)
 
             await uow.flush()
             await uow.commit()

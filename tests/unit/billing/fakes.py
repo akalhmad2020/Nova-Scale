@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from datetime import datetime, timedelta
 from types import TracebackType
 from typing import cast
 from uuid import UUID, uuid4
@@ -23,6 +24,13 @@ from app.modules.ledger.application.ports.repositories import (
 from app.modules.shipments.infrastructure.models.shipment import Shipment
 from app.modules.shipments.infrastructure.repositories.shipment_repository import (
     ShipmentRepository,
+)
+from app.shared.outbox.application.ports.repositories import (
+    OutboxMessageRepository,
+)
+from app.shared.outbox.domain.enums import OutboxMessageStatus
+from app.shared.outbox.infrastructure.models.outbox_message import (
+    OutboxMessage,
 )
 from tests.unit.ledger.fakes import (
     FakeJournalEntryRepository,
@@ -193,6 +201,169 @@ class FakeShipmentRepository:
         return None
 
 
+class FakeOutboxMessageRepository:
+    def __init__(self) -> None:
+        self.items: list[OutboxMessage] = []
+
+    async def add(
+        self,
+        message: OutboxMessage,
+    ) -> None:
+        message.id = uuid4()
+        self.items.append(message)
+
+    async def get_by_id(
+        self,
+        *,
+        message_id: UUID,
+    ) -> OutboxMessage | None:
+        for message in self.items:
+            if message.id == message_id:
+                return message
+
+        return None
+
+    async def get_by_id_for_update(
+        self,
+        *,
+        message_id: UUID,
+    ) -> OutboxMessage | None:
+        return await self.get_by_id(
+            message_id=message_id,
+        )
+
+    async def list_ready(
+        self,
+        *,
+        now: datetime,
+        limit: int = 100,
+    ) -> Sequence[OutboxMessage]:
+        ready = [
+            message
+            for message in self.items
+            if (
+                message.status == OutboxMessageStatus.PENDING.value
+                and (message.available_at is None or message.available_at <= now)
+            )
+        ]
+
+        return ready[:limit]
+
+    async def claim_ready(
+        self,
+        *,
+        now: datetime,
+        lease_duration: timedelta,
+        claim_token: UUID,
+        limit: int = 100,
+    ) -> Sequence[OutboxMessage]:
+        claimed: list[OutboxMessage] = []
+
+        for message in self.items:
+            if len(claimed) >= limit:
+                break
+
+            pending_and_ready = message.status == OutboxMessageStatus.PENDING.value and (
+                message.available_at is None or message.available_at <= now
+            )
+
+            expired_processing = (
+                message.status == OutboxMessageStatus.PROCESSING.value
+                and message.lease_expires_at is not None
+                and message.lease_expires_at <= now
+            )
+
+            if not (pending_and_ready or expired_processing):
+                continue
+
+            message.status = OutboxMessageStatus.PROCESSING.value
+            message.attempt_count += 1
+            message.claim_token = claim_token
+            message.lease_expires_at = now + lease_duration
+
+            claimed.append(message)
+
+        return claimed
+
+    async def mark_processed(
+        self,
+        *,
+        message_id: UUID,
+        claim_token: UUID,
+        processed_at: datetime,
+    ) -> bool:
+        message = await self.get_by_id(
+            message_id=message_id,
+        )
+
+        if (
+            message is None
+            or message.status != OutboxMessageStatus.PROCESSING.value
+            or message.claim_token != claim_token
+        ):
+            return False
+
+        message.status = OutboxMessageStatus.PROCESSED.value
+        message.processed_at = processed_at
+        message.claim_token = None
+        message.lease_expires_at = None
+        message.last_error = None
+
+        return True
+
+    async def release_for_retry(
+        self,
+        *,
+        message_id: UUID,
+        claim_token: UUID,
+        available_at: datetime,
+        error: str,
+    ) -> bool:
+        message = await self.get_by_id(
+            message_id=message_id,
+        )
+
+        if (
+            message is None
+            or message.status != OutboxMessageStatus.PROCESSING.value
+            or message.claim_token != claim_token
+        ):
+            return False
+
+        message.status = OutboxMessageStatus.PENDING.value
+        message.available_at = available_at
+        message.claim_token = None
+        message.lease_expires_at = None
+        message.last_error = error
+
+        return True
+
+    async def mark_failed(
+        self,
+        *,
+        message_id: UUID,
+        claim_token: UUID,
+        error: str,
+    ) -> bool:
+        message = await self.get_by_id(
+            message_id=message_id,
+        )
+
+        if (
+            message is None
+            or message.status != OutboxMessageStatus.PROCESSING.value
+            or message.claim_token != claim_token
+        ):
+            return False
+
+        message.status = OutboxMessageStatus.FAILED.value
+        message.claim_token = None
+        message.lease_expires_at = None
+        message.last_error = error
+
+        return True
+
+
 class FakeBillingUnitOfWork:
     def __init__(self) -> None:
         self.fake_invoices = FakeInvoiceRepository()
@@ -203,6 +374,8 @@ class FakeBillingUnitOfWork:
         self.fake_ledger_accounts = FakeLedgerAccountRepository()
         self.fake_journal_entries = FakeJournalEntryRepository()
         self.fake_journal_lines = FakeJournalLineRepository()
+
+        self.fake_outbox_messages = FakeOutboxMessageRepository()
 
         self.invoices: InvoiceRepository = self.fake_invoices
         self.invoice_lines: InvoiceLineRepository = self.fake_invoice_lines
@@ -219,6 +392,8 @@ class FakeBillingUnitOfWork:
         self.ledger_accounts: LedgerAccountRepository = self.fake_ledger_accounts
         self.journal_entries: JournalEntryRepository = self.fake_journal_entries
         self.journal_lines: JournalLineRepository = self.fake_journal_lines
+
+        self.outbox_messages: OutboxMessageRepository = self.fake_outbox_messages
 
         self.committed = False
         self.rolled_back = False

@@ -30,6 +30,12 @@ from app.modules.ledger.infrastructure.repositories.sqlalchemy import (
 from app.modules.shipments.infrastructure.repositories.shipment_repository import (
     ShipmentRepository,
 )
+from app.shared.outbox.application.ports.repositories import (
+    OutboxMessageRepository,
+)
+from app.shared.outbox.infrastructure.repositories.sqlalchemy import (
+    SQLAlchemyOutboxMessageRepository,
+)
 
 
 class SQLAlchemyBillingUnitOfWork:
@@ -49,6 +55,8 @@ class SQLAlchemyBillingUnitOfWork:
         self.journal_entries: JournalEntryRepository
         self.journal_lines: JournalLineRepository
 
+        self.outbox_messages: OutboxMessageRepository
+
     async def __aenter__(self) -> "SQLAlchemyBillingUnitOfWork":
         self._session = self._session_factory()
 
@@ -65,6 +73,10 @@ class SQLAlchemyBillingUnitOfWork:
             self._session,
         )
         self.journal_lines = SQLAlchemyJournalLineRepository(
+            self._session,
+        )
+
+        self.outbox_messages = SQLAlchemyOutboxMessageRepository(
             self._session,
         )
 
