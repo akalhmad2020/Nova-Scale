@@ -4,6 +4,8 @@ from types import TracebackType
 from typing import cast
 from uuid import UUID, uuid4
 
+from app.modules.audit.application.ports.repositories import AuditLogRepository
+from app.modules.audit.infrastructure.models.audit_log import AuditLog
 from app.modules.billing.application.ports.invoice_line_repository import (
     InvoiceLineRepository,
 )
@@ -364,6 +366,81 @@ class FakeOutboxMessageRepository:
         return True
 
 
+class FakeAuditLogRepository:
+    def __init__(self) -> None:
+        self.items: list[AuditLog] = []
+
+    async def add(
+        self,
+        audit_log: AuditLog,
+    ) -> None:
+        audit_log.id = uuid4()
+        self.items.append(audit_log)
+
+    async def get_by_id(
+        self,
+        *,
+        tenant_id: UUID,
+        audit_log_id: UUID,
+    ) -> AuditLog | None:
+        for audit_log in self.items:
+            if audit_log.tenant_id == tenant_id and audit_log.id == audit_log_id:
+                return audit_log
+
+        return None
+
+    async def list_for_tenant(
+        self,
+        *,
+        tenant_id: UUID,
+        limit: int = 100,
+        offset: int = 0,
+        actor_id: UUID | None = None,
+        action: str | None = None,
+        resource_type: str | None = None,
+        resource_id: UUID | None = None,
+        occurred_from: datetime | None = None,
+        occurred_to: datetime | None = None,
+    ) -> Sequence[AuditLog]:
+        audit_logs = [audit_log for audit_log in self.items if audit_log.tenant_id == tenant_id]
+
+        if actor_id is not None:
+            audit_logs = [audit_log for audit_log in audit_logs if audit_log.actor_id == actor_id]
+
+        if action is not None:
+            audit_logs = [audit_log for audit_log in audit_logs if audit_log.action == action]
+
+        if resource_type is not None:
+            audit_logs = [
+                audit_log for audit_log in audit_logs if audit_log.resource_type == resource_type
+            ]
+
+        if resource_id is not None:
+            audit_logs = [
+                audit_log for audit_log in audit_logs if audit_log.resource_id == resource_id
+            ]
+
+        if occurred_from is not None:
+            audit_logs = [
+                audit_log for audit_log in audit_logs if audit_log.occurred_at >= occurred_from
+            ]
+
+        if occurred_to is not None:
+            audit_logs = [
+                audit_log for audit_log in audit_logs if audit_log.occurred_at <= occurred_to
+            ]
+
+        audit_logs.sort(
+            key=lambda audit_log: (
+                audit_log.occurred_at,
+                audit_log.id,
+            ),
+            reverse=True,
+        )
+
+        return audit_logs[offset : offset + limit]
+
+
 class FakeBillingUnitOfWork:
     def __init__(self) -> None:
         self.fake_invoices = FakeInvoiceRepository()
@@ -376,6 +453,7 @@ class FakeBillingUnitOfWork:
         self.fake_journal_lines = FakeJournalLineRepository()
 
         self.fake_outbox_messages = FakeOutboxMessageRepository()
+        self.fake_audit_logs = FakeAuditLogRepository()
 
         self.invoices: InvoiceRepository = self.fake_invoices
         self.invoice_lines: InvoiceLineRepository = self.fake_invoice_lines
@@ -394,6 +472,7 @@ class FakeBillingUnitOfWork:
         self.journal_lines: JournalLineRepository = self.fake_journal_lines
 
         self.outbox_messages: OutboxMessageRepository = self.fake_outbox_messages
+        self.audit_logs: AuditLogRepository = self.fake_audit_logs
 
         self.committed = False
         self.rolled_back = False

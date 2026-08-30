@@ -1,6 +1,9 @@
+from collections.abc import Sequence
+from datetime import datetime
 from types import TracebackType
-from uuid import UUID
+from uuid import UUID, uuid4
 
+from app.modules.audit.infrastructure.models.audit_log import AuditLog
 from app.modules.customers.infrastructure.models.customer import Customer
 from app.modules.locations.infrastructure.models.location import Location
 from app.modules.shipments.infrastructure.models.shipment import Shipment
@@ -191,11 +194,73 @@ class FakeLocationRepository:
         self.items.append(location)
 
 
+class FakeAuditLogRepository:
+    def __init__(self) -> None:
+        self.items: list[AuditLog] = []
+
+    async def add(
+        self,
+        audit_log: AuditLog,
+    ) -> None:
+        self.items.append(audit_log)
+
+    async def get_by_id(
+        self,
+        *,
+        tenant_id: UUID,
+        audit_log_id: UUID,
+    ) -> AuditLog | None:
+        return next(
+            (
+                audit_log
+                for audit_log in self.items
+                if audit_log.tenant_id == tenant_id and audit_log.id == audit_log_id
+            ),
+            None,
+        )
+
+    async def list_for_tenant(
+        self,
+        *,
+        tenant_id: UUID,
+        limit: int = 100,
+        offset: int = 0,
+        actor_id: UUID | None = None,
+        action: str | None = None,
+        resource_type: str | None = None,
+        resource_id: UUID | None = None,
+        occurred_from: datetime | None = None,
+        occurred_to: datetime | None = None,
+    ) -> Sequence[AuditLog]:
+        items = [audit_log for audit_log in self.items if audit_log.tenant_id == tenant_id]
+
+        if actor_id is not None:
+            items = [audit_log for audit_log in items if audit_log.actor_id == actor_id]
+
+        if action is not None:
+            items = [audit_log for audit_log in items if audit_log.action == action]
+
+        if resource_type is not None:
+            items = [audit_log for audit_log in items if audit_log.resource_type == resource_type]
+
+        if resource_id is not None:
+            items = [audit_log for audit_log in items if audit_log.resource_id == resource_id]
+
+        if occurred_from is not None:
+            items = [audit_log for audit_log in items if audit_log.occurred_at >= occurred_from]
+
+        if occurred_to is not None:
+            items = [audit_log for audit_log in items if audit_log.occurred_at <= occurred_to]
+
+        return items[offset : offset + limit]
+
+
 class FakeUnitOfWork:
     def __init__(self) -> None:
         self.shipments = FakeShipmentRepository()
         self.customers = FakeCustomerRepository()
         self.locations = FakeLocationRepository()
+        self.audit_logs = FakeAuditLogRepository()
 
         self.flushed = False
         self.committed = False
@@ -216,6 +281,10 @@ class FakeUnitOfWork:
 
     async def flush(self) -> None:
         self.flushed = True
+
+        for shipment in self.shipments.items:
+            if getattr(shipment, "id", None) is None:
+                shipment.id = uuid4()
 
     async def commit(self) -> None:
         self.committed = True

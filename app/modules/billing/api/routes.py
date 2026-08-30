@@ -279,12 +279,12 @@ async def issue_invoice(
         Depends(get_issue_invoice_use_case),
     ],
 ) -> InvoiceResponse:
-    del membership
 
     try:
         invoice = await use_case.execute(
             tenant_id=tenant_id,
             invoice_id=invoice_id,
+            actor_id=membership.user_id,
         )
     except InvoiceNotFoundError as exc:
         raise HTTPException(
@@ -331,12 +331,11 @@ async def void_invoice(
         Depends(get_void_invoice_use_case),
     ],
 ) -> InvoiceResponse:
-    del membership
-
     try:
         invoice = await use_case.execute(
             tenant_id=tenant_id,
             invoice_id=invoice_id,
+            actor_id=membership.user_id,
         )
     except InvoiceNotFoundError as exc:
         raise HTTPException(

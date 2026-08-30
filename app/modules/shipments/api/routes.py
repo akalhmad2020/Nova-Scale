@@ -67,7 +67,7 @@ router = APIRouter(
 async def create_shipment(
     tenant_id: UUID,
     request: CreateShipmentRequest,
-    _: Annotated[
+    membership: Annotated[
         Membership,
         Depends(
             require_permission(
@@ -84,6 +84,7 @@ async def create_shipment(
         shipment = await use_case.execute(
             CreateShipmentCommand(
                 tenant_id=tenant_id,
+                actor_id=membership.user_id,
                 customer_id=request.customer_id,
                 origin_location_id=request.origin_location_id,
                 destination_location_id=request.destination_location_id,
@@ -200,7 +201,7 @@ async def update_shipment(
     tenant_id: UUID,
     shipment_id: UUID,
     request: UpdateShipmentRequest,
-    _: Annotated[
+    membership: Annotated[
         Membership,
         Depends(
             require_permission(
@@ -217,6 +218,7 @@ async def update_shipment(
         shipment = await use_case.execute(
             UpdateShipmentCommand(
                 tenant_id=tenant_id,
+                actor_id=membership.user_id,
                 shipment_id=shipment_id,
                 customer_id=request.customer_id,
                 origin_location_id=request.origin_location_id,
@@ -271,7 +273,7 @@ async def update_shipment(
 async def delete_shipment(
     tenant_id: UUID,
     shipment_id: UUID,
-    _: Annotated[
+    membership: Annotated[
         Membership,
         Depends(
             require_permission(
@@ -288,6 +290,7 @@ async def delete_shipment(
         await use_case.execute(
             DeleteShipmentCommand(
                 tenant_id=tenant_id,
+                actor_id=membership.user_id,
                 shipment_id=shipment_id,
             )
         )
@@ -312,7 +315,7 @@ async def transition_shipment_status(
     tenant_id: UUID,
     shipment_id: UUID,
     request: TransitionShipmentStatusRequest,
-    _: Annotated[
+    membership: Annotated[
         Membership,
         Depends(
             require_permission(
@@ -331,6 +334,7 @@ async def transition_shipment_status(
                 tenant_id=tenant_id,
                 shipment_id=shipment_id,
                 target_status=request.status,
+                actor_id=membership.user_id,
             )
         )
 

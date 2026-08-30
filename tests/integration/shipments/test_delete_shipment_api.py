@@ -13,6 +13,8 @@ from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
 from app.main import app
+from app.modules.audit.domain.enums import AuditActorType, AuditOutcome
+from app.modules.audit.infrastructure.models.audit_log import AuditLog
 from app.modules.customers.domain.enums import CustomerStatus
 from app.modules.customers.infrastructure.models.customer import Customer
 from app.modules.identity.domain.enums import (
@@ -67,46 +69,100 @@ async def cleanup_test_data(
 
     try:
         async with session_factory() as session:
-            user_id = await session.scalar(select(User.id).where(User.email == email))
+            user_id = await session.scalar(
+                select(User.id).where(
+                    User.email == email,
+                )
+            )
 
             tenant_ids = list(
                 (
-                    await session.scalars(select(Tenant.id).where(Tenant.slug.in_(tenant_slugs)))
+                    await session.scalars(
+                        select(Tenant.id).where(
+                            Tenant.slug.in_(tenant_slugs),
+                        )
+                    )
                 ).all()
             )
 
-            role_id = await session.scalar(select(Role.id).where(Role.name == role_name))
-
-            if tenant_ids:
-                await session.execute(delete(Shipment).where(Shipment.tenant_id.in_(tenant_ids)))
-
-                await session.execute(delete(Customer).where(Customer.tenant_id.in_(tenant_ids)))
-
-                await session.execute(delete(Location).where(Location.tenant_id.in_(tenant_ids)))
-
-            if user_id is not None:
-                await session.execute(delete(AuthSession).where(AuthSession.user_id == user_id))
-
-                await session.execute(delete(Membership).where(Membership.user_id == user_id))
+            role_id = await session.scalar(
+                select(Role.id).where(
+                    Role.name == role_name,
+                )
+            )
 
             if tenant_ids:
                 await session.execute(
-                    delete(Membership).where(Membership.tenant_id.in_(tenant_ids))
+                    delete(AuditLog).where(
+                        AuditLog.tenant_id.in_(tenant_ids),
+                    )
+                )
+
+                await session.execute(
+                    delete(Shipment).where(
+                        Shipment.tenant_id.in_(tenant_ids),
+                    )
+                )
+
+                await session.execute(
+                    delete(Customer).where(
+                        Customer.tenant_id.in_(tenant_ids),
+                    )
+                )
+
+                await session.execute(
+                    delete(Location).where(
+                        Location.tenant_id.in_(tenant_ids),
+                    )
+                )
+
+            if user_id is not None:
+                await session.execute(
+                    delete(AuthSession).where(
+                        AuthSession.user_id == user_id,
+                    )
+                )
+
+                await session.execute(
+                    delete(Membership).where(
+                        Membership.user_id == user_id,
+                    )
+                )
+
+            if tenant_ids:
+                await session.execute(
+                    delete(Membership).where(
+                        Membership.tenant_id.in_(tenant_ids),
+                    )
                 )
 
             if role_id is not None:
                 await session.execute(
-                    delete(RolePermission).where(RolePermission.role_id == role_id)
+                    delete(RolePermission).where(
+                        RolePermission.role_id == role_id,
+                    )
                 )
 
             if user_id is not None:
-                await session.execute(delete(User).where(User.id == user_id))
+                await session.execute(
+                    delete(User).where(
+                        User.id == user_id,
+                    )
+                )
 
             if tenant_ids:
-                await session.execute(delete(Tenant).where(Tenant.id.in_(tenant_ids)))
+                await session.execute(
+                    delete(Tenant).where(
+                        Tenant.id.in_(tenant_ids),
+                    )
+                )
 
             if role_id is not None:
-                await session.execute(delete(Role).where(Role.id == role_id))
+                await session.execute(
+                    delete(Role).where(
+                        Role.id == role_id,
+                    )
+                )
 
             await session.commit()
 
@@ -121,7 +177,13 @@ async def create_delete_context(
     tenant_slug: str,
     role_name: str,
     assign_permission: bool,
-) -> tuple[Tenant, Customer, Location, Location]:
+) -> tuple[
+    Tenant,
+    Customer,
+    Location,
+    Location,
+    User,
+]:
     settings = get_settings()
 
     engine = create_async_engine(
@@ -160,7 +222,9 @@ async def create_delete_context(
             )
 
             permission = await session.scalar(
-                select(Permission).where(Permission.code == Permissions.SHIPMENT_DELETE)
+                select(Permission).where(
+                    Permission.code == Permissions.SHIPMENT_DELETE,
+                )
             )
 
             if permission is None:
@@ -241,6 +305,7 @@ async def create_delete_context(
                 customer,
                 origin,
                 destination,
+                user,
             )
 
     finally:
@@ -250,7 +315,12 @@ async def create_delete_context(
 async def create_foreign_resources(
     *,
     tenant_slug: str,
-) -> tuple[Tenant, Customer, Location, Location]:
+) -> tuple[
+    Tenant,
+    Customer,
+    Location,
+    Location,
+]:
     settings = get_settings()
 
     engine = create_async_engine(
@@ -402,6 +472,56 @@ async def get_shipment_raw(
         await engine.dispose()
 
 
+async def get_shipment_delete_audit_logs(
+    *,
+    tenant_id: UUID,
+    shipment_id: UUID | None = None,
+) -> list[AuditLog]:
+    settings = get_settings()
+
+    engine = create_async_engine(
+        settings.database_url,
+        poolclass=NullPool,
+    )
+
+    session_factory = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autoflush=False,
+    )
+
+    try:
+        async with session_factory() as session:
+            statement = (
+                select(AuditLog)
+                .where(
+                    AuditLog.tenant_id == tenant_id,
+                    AuditLog.action == "shipment.deleted",
+                    AuditLog.resource_type == "shipment",
+                )
+                .order_by(
+                    AuditLog.occurred_at.asc(),
+                )
+            )
+
+            if shipment_id is not None:
+                statement = statement.where(
+                    AuditLog.resource_id == shipment_id,
+                )
+
+            return list(
+                (
+                    await session.scalars(
+                        statement,
+                    )
+                ).all()
+            )
+
+    finally:
+        await engine.dispose()
+
+
 def login_and_get_access_token(
     *,
     email: str,
@@ -434,7 +554,13 @@ async def test_delete_shipment_endpoint_soft_deletes_shipment() -> None:
     tenant_slug = f"shipment-delete-tenant-{unique}"
     role_name = f"shipment-delete-role-{unique}"
 
-    tenant, customer, origin, destination = await create_delete_context(
+    (
+        tenant,
+        customer,
+        origin,
+        destination,
+        user,
+    ) = await create_delete_context(
         email=email,
         password=password,
         tenant_slug=tenant_slug,
@@ -474,6 +600,37 @@ async def test_delete_shipment_endpoint_soft_deletes_shipment() -> None:
         assert stored is not None
         assert stored.deleted_at is not None
 
+        audit_logs = await get_shipment_delete_audit_logs(
+            tenant_id=tenant.id,
+            shipment_id=shipment.id,
+        )
+
+        assert len(audit_logs) == 1
+
+        audit_log = audit_logs[0]
+
+        assert audit_log.tenant_id == tenant.id
+        assert audit_log.actor_type == AuditActorType.USER
+        assert audit_log.actor_id == user.id
+        assert audit_log.action == "shipment.deleted"
+        assert audit_log.resource_type == "shipment"
+        assert audit_log.resource_id == shipment.id
+        assert audit_log.outcome == AuditOutcome.SUCCESS
+
+        assert audit_log.metadata_ == {
+            "tracking_number": shipment.tracking_number,
+            "customer_id": str(customer.id),
+            "origin_location_id": str(origin.id),
+            "destination_location_id": str(destination.id),
+            "status": ShipmentStatus.DRAFT.value,
+            "service_type": ServiceType.STANDARD.value,
+            "weight": "1.000",
+            "weight_unit": WeightUnit.KG.value,
+            "deleted_at": stored.deleted_at.isoformat(),
+        }
+
+        assert audit_log.occurred_at == stored.deleted_at
+
     finally:
         await cleanup_test_data(
             email=email,
@@ -491,7 +648,13 @@ async def test_delete_shipment_endpoint_requires_permission() -> None:
     tenant_slug = f"shipment-delete-denied-{unique}"
     role_name = f"shipment-delete-denied-role-{unique}"
 
-    tenant, customer, origin, destination = await create_delete_context(
+    (
+        tenant,
+        customer,
+        origin,
+        destination,
+        _,
+    ) = await create_delete_context(
         email=email,
         password=password,
         tenant_slug=tenant_slug,
@@ -522,7 +685,9 @@ async def test_delete_shipment_endpoint_requires_permission() -> None:
             )
 
         assert response.status_code == 403
-        assert response.json() == {"detail": "Permission denied"}
+        assert response.json() == {
+            "detail": "Permission denied",
+        }
 
         stored = await get_shipment_raw(
             shipment.id,
@@ -530,6 +695,13 @@ async def test_delete_shipment_endpoint_requires_permission() -> None:
 
         assert stored is not None
         assert stored.deleted_at is None
+
+        audit_logs = await get_shipment_delete_audit_logs(
+            tenant_id=tenant.id,
+            shipment_id=shipment.id,
+        )
+
+        assert audit_logs == []
 
     finally:
         await cleanup_test_data(
@@ -548,7 +720,7 @@ async def test_delete_shipment_endpoint_rejects_unknown_shipment() -> None:
     tenant_slug = f"shipment-delete-missing-{unique}"
     role_name = f"shipment-delete-missing-role-{unique}"
 
-    tenant, _, _, _ = await create_delete_context(
+    tenant, _, _, _, _ = await create_delete_context(
         email=email,
         password=password,
         tenant_slug=tenant_slug,
@@ -571,7 +743,15 @@ async def test_delete_shipment_endpoint_rejects_unknown_shipment() -> None:
             )
 
         assert response.status_code == 404
-        assert response.json() == {"detail": "Shipment not found"}
+        assert response.json() == {
+            "detail": "Shipment not found",
+        }
+
+        audit_logs = await get_shipment_delete_audit_logs(
+            tenant_id=tenant.id,
+        )
+
+        assert audit_logs == []
 
     finally:
         await cleanup_test_data(
@@ -592,7 +772,7 @@ async def test_delete_shipment_endpoint_rejects_other_tenant_shipment() -> None:
     foreign_slug = f"shipment-delete-foreign-{unique}"
     role_name = f"shipment-delete-isolation-role-{unique}"
 
-    tenant, _, _, _ = await create_delete_context(
+    tenant, _, _, _, _ = await create_delete_context(
         email=email,
         password=password,
         tenant_slug=tenant_slug,
@@ -632,7 +812,9 @@ async def test_delete_shipment_endpoint_rejects_other_tenant_shipment() -> None:
             )
 
         assert response.status_code == 404
-        assert response.json() == {"detail": "Shipment not found"}
+        assert response.json() == {
+            "detail": "Shipment not found",
+        }
 
         stored = await get_shipment_raw(
             shipment.id,
@@ -640,6 +822,19 @@ async def test_delete_shipment_endpoint_rejects_other_tenant_shipment() -> None:
 
         assert stored is not None
         assert stored.deleted_at is None
+
+        audit_logs = await get_shipment_delete_audit_logs(
+            tenant_id=tenant.id,
+        )
+
+        assert audit_logs == []
+
+        foreign_audit_logs = await get_shipment_delete_audit_logs(
+            tenant_id=foreign_tenant.id,
+            shipment_id=shipment.id,
+        )
+
+        assert foreign_audit_logs == []
 
     finally:
         await cleanup_test_data(

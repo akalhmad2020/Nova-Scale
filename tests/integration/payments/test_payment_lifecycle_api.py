@@ -14,6 +14,8 @@ from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
 from app.main import app
+from app.modules.audit.domain.enums import AuditActorType, AuditOutcome
+from app.modules.audit.infrastructure.models.audit_log import AuditLog
 from app.modules.billing.domain.enums import InvoiceStatus
 from app.modules.billing.infrastructure.models.invoice import Invoice
 from app.modules.customers.domain.enums import CustomerStatus
@@ -93,6 +95,12 @@ async def cleanup_test_data(
             )
 
             if tenant_ids:
+                await session.execute(
+                    delete(AuditLog).where(
+                        AuditLog.tenant_id.in_(tenant_ids),
+                    )
+                )
+
                 await session.execute(
                     delete(JournalLine).where(
                         JournalLine.tenant_id.in_(tenant_ids),
@@ -551,6 +559,21 @@ async def test_post_payment_endpoint_posts_draft_payment() -> None:
                 persisted_payment = await session.get(Payment, payment.id)
                 persisted_invoice = await session.get(Invoice, invoice.id)
 
+                persisted_user = await session.scalar(
+                    select(User).where(
+                        User.email == email,
+                    )
+                )
+
+                audit_log = await session.scalar(
+                    select(AuditLog).where(
+                        AuditLog.tenant_id == tenant.id,
+                        AuditLog.action == "payment.posted",
+                        AuditLog.resource_type == "payment",
+                        AuditLog.resource_id == payment.id,
+                    )
+                )
+
                 journal_entry = await session.scalar(
                     select(JournalEntry).where(
                         JournalEntry.tenant_id == tenant.id,
@@ -561,11 +584,28 @@ async def test_post_payment_endpoint_posts_draft_payment() -> None:
 
                 assert persisted_payment is not None
                 assert persisted_invoice is not None
+                assert persisted_user is not None
+                assert audit_log is not None
+
                 assert persisted_payment.status == PaymentStatus.POSTED
                 assert persisted_payment.posted_at is not None
                 assert persisted_invoice.status == InvoiceStatus.PAID
                 assert persisted_invoice.paid_at is not None
                 assert journal_entry is not None
+
+                assert audit_log.tenant_id == tenant.id
+                assert audit_log.actor_type == AuditActorType.USER
+                assert audit_log.actor_id == persisted_user.id
+                assert audit_log.action == "payment.posted"
+                assert audit_log.resource_type == "payment"
+                assert audit_log.resource_id == payment.id
+                assert audit_log.outcome == AuditOutcome.SUCCESS
+                assert audit_log.metadata_ == {
+                    "payment_number": payment.payment_number,
+                    "amount": str(payment.amount),
+                    "currency": payment.currency,
+                }
+                assert audit_log.occurred_at == persisted_payment.posted_at
 
                 journal_lines = list(
                     (
@@ -678,12 +718,69 @@ async def test_void_payment_endpoint_voids_draft_payment() -> None:
         assert body["status"] == PaymentStatus.VOID.value
         assert body["posted_at"] is None
 
-        persisted_payment = await get_payment(
-            payment_id=payment.id,
+        settings = get_settings()
+
+        engine = create_async_engine(
+            settings.database_url,
+            poolclass=NullPool,
         )
 
-        assert persisted_payment.status == PaymentStatus.VOID
-        assert persisted_payment.posted_at is None
+        session_factory = async_sessionmaker(
+            bind=engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+            autoflush=False,
+        )
+
+        try:
+            async with session_factory() as session:
+                persisted_payment = await session.get(
+                    Payment,
+                    payment.id,
+                )
+
+                persisted_user = await session.scalar(
+                    select(User).where(
+                        User.email == email,
+                    )
+                )
+
+                audit_log = await session.scalar(
+                    select(AuditLog).where(
+                        AuditLog.tenant_id == tenant.id,
+                        AuditLog.action == "payment.voided",
+                        AuditLog.resource_type == "payment",
+                        AuditLog.resource_id == payment.id,
+                    )
+                )
+
+                assert persisted_payment is not None
+                assert persisted_user is not None
+                assert audit_log is not None
+
+                assert persisted_payment.status == PaymentStatus.VOID
+                assert persisted_payment.posted_at is None
+
+                assert audit_log.tenant_id == tenant.id
+
+                assert audit_log.actor_type == AuditActorType.USER
+                assert audit_log.actor_id == persisted_user.id
+
+                assert audit_log.action == "payment.voided"
+
+                assert audit_log.resource_type == "payment"
+                assert audit_log.resource_id == payment.id
+
+                assert audit_log.outcome == AuditOutcome.SUCCESS
+
+                assert audit_log.metadata_ == {
+                    "payment_number": payment.payment_number,
+                    "amount": str(payment.amount),
+                    "currency": payment.currency,
+                }
+
+        finally:
+            await engine.dispose()
 
     finally:
         await cleanup_test_data(
@@ -1162,6 +1259,15 @@ async def test_post_payment_rolls_back_when_ledger_account_is_inactive() -> None
                     )
                 )
 
+                audit_log = await session.scalar(
+                    select(AuditLog).where(
+                        AuditLog.tenant_id == tenant.id,
+                        AuditLog.action == "payment.posted",
+                        AuditLog.resource_type == "payment",
+                        AuditLog.resource_id == payment.id,
+                    )
+                )
+
                 assert persisted_payment is not None
                 assert persisted_invoice is not None
 
@@ -1170,6 +1276,7 @@ async def test_post_payment_rolls_back_when_ledger_account_is_inactive() -> None
                 assert persisted_invoice.status == InvoiceStatus.ISSUED
                 assert persisted_invoice.paid_at is None
                 assert journal_entry is None
+                assert audit_log is None
         finally:
             await engine.dispose()
 

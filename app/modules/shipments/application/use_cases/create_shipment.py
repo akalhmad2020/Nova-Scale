@@ -2,6 +2,11 @@ from dataclasses import dataclass
 from decimal import Decimal
 from uuid import UUID
 
+from app.modules.audit.application.contracts import AuditRecord
+from app.modules.audit.application.use_cases.record_audit_log import (
+    RecordAuditLogUseCase,
+)
+from app.modules.audit.domain.enums import AuditActorType, AuditOutcome
 from app.modules.shipments.application.exceptions import (
     ShipmentCustomerNotFoundError,
     ShipmentDestinationLocationNotFoundError,
@@ -20,6 +25,7 @@ from app.modules.shipments.infrastructure.models.shipment import Shipment
 @dataclass(frozen=True, slots=True)
 class CreateShipmentCommand:
     tenant_id: UUID
+    actor_id: UUID
     customer_id: UUID
     origin_location_id: UUID
     destination_location_id: UUID
@@ -102,6 +108,32 @@ class CreateShipment:
             uow.shipments.add(shipment)
 
             await uow.flush()
+
+            audit = RecordAuditLogUseCase(
+                audit_logs=uow.audit_logs,
+            )
+
+            await audit.execute(
+                AuditRecord(
+                    tenant_id=command.tenant_id,
+                    actor_type=AuditActorType.USER,
+                    actor_id=command.actor_id,
+                    action="shipment.created",
+                    resource_type="shipment",
+                    resource_id=shipment.id,
+                    outcome=AuditOutcome.SUCCESS,
+                    metadata={
+                        "tracking_number": shipment.tracking_number,
+                        "customer_id": str(shipment.customer_id),
+                        "origin_location_id": str(shipment.origin_location_id),
+                        "destination_location_id": str(shipment.destination_location_id),
+                        "service_type": command.service_type.value,
+                        "weight": str(command.weight),
+                        "weight_unit": command.weight_unit.value,
+                    },
+                )
+            )
+
             await uow.commit()
             await uow.refresh(shipment)
 

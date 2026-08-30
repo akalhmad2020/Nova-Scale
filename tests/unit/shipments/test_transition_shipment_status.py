@@ -3,6 +3,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from app.modules.audit.domain.enums import AuditActorType, AuditOutcome
 from app.modules.shipments.application.exceptions import (
     InvalidShipmentStatusTransitionError,
     ShipmentNotFoundError,
@@ -44,6 +45,7 @@ def make_shipment(
 async def test_transition_shipment_status_updates_status() -> None:
     uow = FakeUnitOfWork()
     tenant_id = uuid4()
+    actor_id = uuid4()
 
     shipment = make_shipment(
         tenant_id=tenant_id,
@@ -55,6 +57,7 @@ async def test_transition_shipment_status_updates_status() -> None:
     result = await TransitionShipmentStatus(uow).execute(
         TransitionShipmentStatusCommand(
             tenant_id=tenant_id,
+            actor_id=actor_id,
             shipment_id=shipment.id,
             target_status=ShipmentStatus.READY,
         )
@@ -67,6 +70,26 @@ async def test_transition_shipment_status_updates_status() -> None:
     assert uow.committed is True
     assert uow.refreshed is True
     assert uow.rolled_back is False
+
+    assert len(uow.audit_logs.items) == 1
+
+    audit_log = uow.audit_logs.items[0]
+
+    assert audit_log.tenant_id == tenant_id
+    assert audit_log.actor_type == AuditActorType.USER
+    assert audit_log.actor_id == actor_id
+    assert audit_log.action == "shipment.status_changed"
+    assert audit_log.resource_type == "shipment"
+    assert audit_log.resource_id == shipment.id
+    assert audit_log.outcome == AuditOutcome.SUCCESS
+
+    assert audit_log.metadata_ == {
+        "tracking_number": shipment.tracking_number,
+        "previous_status": ShipmentStatus.DRAFT.value,
+        "new_status": ShipmentStatus.READY.value,
+    }
+
+    assert audit_log.occurred_at is not None
 
 
 async def test_transition_shipment_status_rejects_invalid_transition() -> None:
@@ -84,6 +107,7 @@ async def test_transition_shipment_status_rejects_invalid_transition() -> None:
         await TransitionShipmentStatus(uow).execute(
             TransitionShipmentStatusCommand(
                 tenant_id=tenant_id,
+                actor_id=uuid4(),
                 shipment_id=shipment.id,
                 target_status=ShipmentStatus.DELIVERED,
             )
@@ -93,6 +117,7 @@ async def test_transition_shipment_status_rejects_invalid_transition() -> None:
     assert uow.flushed is False
     assert uow.committed is False
     assert uow.rolled_back is True
+    assert uow.audit_logs.items == []
 
 
 async def test_transition_shipment_status_rejects_unknown_shipment() -> None:
@@ -102,13 +127,16 @@ async def test_transition_shipment_status_rejects_unknown_shipment() -> None:
         await TransitionShipmentStatus(uow).execute(
             TransitionShipmentStatusCommand(
                 tenant_id=uuid4(),
+                actor_id=uuid4(),
                 shipment_id=uuid4(),
                 target_status=ShipmentStatus.READY,
             )
         )
 
+    assert uow.flushed is False
     assert uow.committed is False
     assert uow.rolled_back is True
+    assert uow.audit_logs.items == []
 
 
 async def test_transition_shipment_status_enforces_tenant_isolation() -> None:
@@ -125,11 +153,14 @@ async def test_transition_shipment_status_enforces_tenant_isolation() -> None:
         await TransitionShipmentStatus(uow).execute(
             TransitionShipmentStatusCommand(
                 tenant_id=uuid4(),
+                actor_id=uuid4(),
                 shipment_id=shipment.id,
                 target_status=ShipmentStatus.READY,
             )
         )
 
     assert shipment.status == ShipmentStatus.DRAFT
+    assert uow.flushed is False
     assert uow.committed is False
     assert uow.rolled_back is True
+    assert uow.audit_logs.items == []

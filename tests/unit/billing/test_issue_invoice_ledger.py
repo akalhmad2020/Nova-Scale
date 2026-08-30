@@ -51,6 +51,7 @@ def add_ledger_account(
 async def test_issue_invoice_posts_balanced_journal_without_tax() -> None:
     tenant_id = uuid4()
     invoice_id = uuid4()
+    actor_id = uuid4()
 
     uow = FakeBillingUnitOfWork()
 
@@ -99,6 +100,7 @@ async def test_issue_invoice_posts_balanced_journal_without_tax() -> None:
     result = await use_case.execute(
         tenant_id=tenant_id,
         invoice_id=invoice_id,
+        actor_id=actor_id,
     )
 
     assert result.status == InvoiceStatus.ISSUED.value
@@ -134,6 +136,7 @@ async def test_issue_invoice_posts_balanced_journal_without_tax() -> None:
 async def test_issue_invoice_posts_tax_payable_line() -> None:
     tenant_id = uuid4()
     invoice_id = uuid4()
+    actor_id = uuid4()
 
     uow = FakeBillingUnitOfWork()
 
@@ -191,6 +194,7 @@ async def test_issue_invoice_posts_tax_payable_line() -> None:
     result = await use_case.execute(
         tenant_id=tenant_id,
         invoice_id=invoice_id,
+        actor_id=actor_id,
     )
 
     assert result.status == InvoiceStatus.ISSUED.value
@@ -218,6 +222,7 @@ async def test_issue_invoice_posts_tax_payable_line() -> None:
 async def test_issue_invoice_rolls_back_when_ledger_posting_fails() -> None:
     tenant_id = uuid4()
     invoice_id = uuid4()
+    actor_id = uuid4()
 
     uow = FakeBillingUnitOfWork()
 
@@ -269,6 +274,7 @@ async def test_issue_invoice_rolls_back_when_ledger_posting_fails() -> None:
         await use_case.execute(
             tenant_id=tenant_id,
             invoice_id=invoice_id,
+            actor_id=actor_id,
         )
 
     assert uow.committed is False
@@ -276,3 +282,4 @@ async def test_issue_invoice_rolls_back_when_ledger_posting_fails() -> None:
 
     assert len(uow.fake_journal_entries.items) == 0
     assert len(uow.fake_journal_lines.items) == 0
+    assert uow.fake_audit_logs.items == []

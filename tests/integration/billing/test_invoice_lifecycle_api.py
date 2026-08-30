@@ -14,6 +14,8 @@ from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
 from app.main import app
+from app.modules.audit.domain.enums import AuditActorType, AuditOutcome
+from app.modules.audit.infrastructure.models.audit_log import AuditLog
 from app.modules.billing.domain.enums import InvoiceStatus
 from app.modules.billing.infrastructure.models.invoice import Invoice
 from app.modules.billing.infrastructure.models.invoice_line import InvoiceLine
@@ -92,6 +94,12 @@ async def cleanup_test_data(
             )
 
             if tenant_ids:
+                await session.execute(
+                    delete(AuditLog).where(
+                        AuditLog.tenant_id.in_(tenant_ids),
+                    )
+                )
+
                 await session.execute(
                     delete(OutboxMessage).where(
                         OutboxMessage.tenant_id.in_(tenant_ids),
@@ -705,8 +713,26 @@ async def test_issue_invoice_endpoint_issues_draft_invoice() -> None:
                         )
                     ).all()
                 )
+
+                persisted_user = await session.scalar(
+                    select(User).where(
+                        User.email == email,
+                    )
+                )
+
+                audit_log = await session.scalar(
+                    select(AuditLog).where(
+                        AuditLog.tenant_id == tenant.id,
+                        AuditLog.action == "invoice.issued",
+                        AuditLog.resource_type == "invoice",
+                        AuditLog.resource_id == invoice.id,
+                    )
+                )
         finally:
             await engine.dispose()
+
+        assert persisted_user is not None
+        assert audit_log is not None
 
         accounts_by_id = {account.id: account for account in accounts}
 
@@ -736,6 +762,29 @@ async def test_issue_invoice_endpoint_issues_draft_invoice() -> None:
             (line.credit for line in journal_lines),
             start=Decimal("0.00"),
         ) == Decimal("30.00")
+
+        assert audit_log.tenant_id == tenant.id
+        assert audit_log.actor_type == AuditActorType.USER
+        assert audit_log.actor_id == persisted_user.id
+
+        assert audit_log.action == "invoice.issued"
+
+        assert audit_log.resource_type == "invoice"
+        assert audit_log.resource_id == invoice.id
+
+        assert audit_log.outcome == AuditOutcome.SUCCESS
+
+        assert audit_log.metadata_ == {
+            "invoice_number": "INV-ISSUE-001",
+            "customer_id": str(customer.id),
+            "currency": "USD",
+            "subtotal": "25.00",
+            "tax_amount": "5.00",
+            "total_amount": "30.00",
+        }
+
+        assert audit_log.occurred_at == persisted_invoice.issued_at
+        assert entry.posted_at == persisted_invoice.issued_at
 
     finally:
         await cleanup_test_data(
@@ -908,6 +957,59 @@ async def test_void_invoice_endpoint_voids_allowed_invoice(
 
         assert persisted_invoice.status == InvoiceStatus.VOID
 
+        settings = get_settings()
+
+        engine = create_async_engine(
+            settings.database_url,
+            poolclass=NullPool,
+        )
+
+        try:
+            async with async_sessionmaker(
+                engine,
+                expire_on_commit=False,
+            )() as session:
+                persisted_user = await session.scalar(
+                    select(User).where(
+                        User.email == email,
+                    )
+                )
+
+                audit_log = await session.scalar(
+                    select(AuditLog).where(
+                        AuditLog.tenant_id == tenant.id,
+                        AuditLog.action == "invoice.voided",
+                        AuditLog.resource_type == "invoice",
+                        AuditLog.resource_id == invoice.id,
+                    )
+                )
+        finally:
+            await engine.dispose()
+
+        assert persisted_user is not None
+        assert audit_log is not None
+
+        assert audit_log.tenant_id == tenant.id
+
+        assert audit_log.actor_type == AuditActorType.USER
+        assert audit_log.actor_id == persisted_user.id
+
+        assert audit_log.action == "invoice.voided"
+
+        assert audit_log.resource_type == "invoice"
+        assert audit_log.resource_id == invoice.id
+
+        assert audit_log.outcome == AuditOutcome.SUCCESS
+
+        assert audit_log.metadata_ == {
+            "invoice_number": f"INV-VOID-{initial_status.value}",
+            "customer_id": str(customer.id),
+            "currency": "USD",
+            "subtotal": "25.00",
+            "tax_amount": "5.00",
+            "total_amount": "30.00",
+        }
+
     finally:
         await cleanup_test_data(
             email=email,
@@ -962,6 +1064,31 @@ async def test_void_invoice_endpoint_rejects_paid_invoice() -> None:
         )
 
         assert persisted_invoice.status == InvoiceStatus.PAID
+
+        settings = get_settings()
+
+        engine = create_async_engine(
+            settings.database_url,
+            poolclass=NullPool,
+        )
+
+        try:
+            async with async_sessionmaker(
+                engine,
+                expire_on_commit=False,
+            )() as session:
+                audit_log = await session.scalar(
+                    select(AuditLog).where(
+                        AuditLog.tenant_id == tenant.id,
+                        AuditLog.action == "invoice.voided",
+                        AuditLog.resource_type == "invoice",
+                        AuditLog.resource_id == invoice.id,
+                    )
+                )
+        finally:
+            await engine.dispose()
+
+        assert audit_log is None
 
     finally:
         await cleanup_test_data(
@@ -1178,6 +1305,35 @@ async def test_issue_invoice_rolls_back_when_ledger_account_is_inactive() -> Non
 
         assert entry is None
         assert journal_lines == []
+
+        settings = get_settings()
+
+        engine = create_async_engine(
+            settings.database_url,
+            poolclass=NullPool,
+        )
+
+        session_factory = async_sessionmaker(
+            bind=engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+            autoflush=False,
+        )
+
+        try:
+            async with session_factory() as session:
+                audit_log = await session.scalar(
+                    select(AuditLog).where(
+                        AuditLog.tenant_id == tenant.id,
+                        AuditLog.action == "invoice.issued",
+                        AuditLog.resource_type == "invoice",
+                        AuditLog.resource_id == invoice.id,
+                    )
+                )
+        finally:
+            await engine.dispose()
+
+        assert audit_log is None
 
     finally:
         await cleanup_test_data(

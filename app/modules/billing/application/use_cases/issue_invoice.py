@@ -2,6 +2,11 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
+from app.modules.audit.application.contracts import AuditRecord
+from app.modules.audit.application.use_cases.record_audit_log import (
+    RecordAuditLogUseCase,
+)
+from app.modules.audit.domain.enums import AuditActorType, AuditOutcome
 from app.modules.billing.application.exceptions import (
     InvalidInvoiceStateTransitionError,
     InvoiceHasNoLinesError,
@@ -49,6 +54,7 @@ class IssueInvoiceUseCase:
         *,
         tenant_id: UUID,
         invoice_id: UUID,
+        actor_id: UUID,
     ) -> Invoice:
         async with self._unit_of_work:
             invoice = await self._unit_of_work.invoices.get_by_id_for_update(
@@ -164,6 +170,31 @@ class IssueInvoiceUseCase:
 
             await self._unit_of_work.outbox_messages.add(
                 outbox_message,
+            )
+
+            audit = RecordAuditLogUseCase(
+                audit_logs=self._unit_of_work.audit_logs,
+            )
+
+            await audit.execute(
+                AuditRecord(
+                    tenant_id=tenant_id,
+                    actor_type=AuditActorType.USER,
+                    actor_id=actor_id,
+                    action="invoice.issued",
+                    resource_type="invoice",
+                    resource_id=invoice.id,
+                    outcome=AuditOutcome.SUCCESS,
+                    metadata={
+                        "invoice_number": invoice.invoice_number,
+                        "customer_id": str(invoice.customer_id),
+                        "currency": invoice.currency,
+                        "subtotal": str(invoice.subtotal),
+                        "tax_amount": str(invoice.tax_amount),
+                        "total_amount": str(invoice.total_amount),
+                    },
+                    occurred_at=issued_at,
+                )
             )
 
             await self._unit_of_work.commit()

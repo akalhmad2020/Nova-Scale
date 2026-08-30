@@ -3,6 +3,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from app.modules.audit.domain.enums import AuditActorType, AuditOutcome
 from app.modules.customers.domain.enums import CustomerStatus
 from app.modules.customers.infrastructure.models.customer import Customer
 from app.modules.locations.domain.enums import LocationStatus, LocationType
@@ -93,10 +94,12 @@ def make_command(
     customer_id: UUID,
     origin_location_id: UUID,
     destination_location_id: UUID,
+    actor_id: UUID | None = None,
     tracking_number: str = "SHIP-002",
 ) -> UpdateShipmentCommand:
     return UpdateShipmentCommand(
         tenant_id=tenant_id,
+        actor_id=actor_id or uuid4(),
         shipment_id=shipment_id,
         customer_id=customer_id,
         origin_location_id=origin_location_id,
@@ -114,10 +117,19 @@ def make_command(
 async def test_update_shipment_updates_fields() -> None:
     uow = FakeUnitOfWork()
     tenant_id = uuid4()
+    actor_id = uuid4()
 
-    customer = make_customer(tenant_id=tenant_id)
-    origin = make_location(tenant_id=tenant_id, code="ORIGIN")
-    destination = make_location(tenant_id=tenant_id, code="DEST")
+    customer = make_customer(
+        tenant_id=tenant_id,
+    )
+    origin = make_location(
+        tenant_id=tenant_id,
+        code="ORIGIN",
+    )
+    destination = make_location(
+        tenant_id=tenant_id,
+        code="DEST",
+    )
 
     shipment = make_shipment(
         tenant_id=tenant_id,
@@ -134,6 +146,7 @@ async def test_update_shipment_updates_fields() -> None:
     result = await UpdateShipment(uow).execute(
         make_command(
             tenant_id=tenant_id,
+            actor_id=actor_id,
             shipment_id=shipment.id,
             customer_id=customer.id,
             origin_location_id=origin.id,
@@ -143,6 +156,7 @@ async def test_update_shipment_updates_fields() -> None:
     )
 
     assert result is shipment
+
     assert shipment.tracking_number == "SHIP-002"
     assert shipment.service_type == ServiceType.EXPRESS
     assert shipment.weight == Decimal("15.750")
@@ -157,6 +171,29 @@ async def test_update_shipment_updates_fields() -> None:
     assert uow.committed is True
     assert uow.refreshed is True
     assert uow.rolled_back is False
+
+    assert len(uow.audit_logs.items) == 1
+
+    audit_log = uow.audit_logs.items[0]
+
+    assert audit_log.tenant_id == tenant_id
+    assert audit_log.actor_type == AuditActorType.USER
+    assert audit_log.actor_id == actor_id
+
+    assert audit_log.action == "shipment.updated"
+    assert audit_log.resource_type == "shipment"
+    assert audit_log.resource_id == shipment.id
+    assert audit_log.outcome == AuditOutcome.SUCCESS
+
+    assert audit_log.metadata_ == {
+        "tracking_number": "SHIP-002",
+        "customer_id": str(customer.id),
+        "origin_location_id": str(origin.id),
+        "destination_location_id": str(destination.id),
+        "service_type": ServiceType.EXPRESS.value,
+        "weight": "15.750",
+        "weight_unit": WeightUnit.KG.value,
+    }
 
 
 async def test_update_shipment_rejects_unknown_shipment() -> None:
@@ -175,6 +212,7 @@ async def test_update_shipment_rejects_unknown_shipment() -> None:
 
     assert uow.committed is False
     assert uow.rolled_back is True
+    assert uow.audit_logs.items == []
 
 
 async def test_update_shipment_rejects_shipment_from_other_tenant() -> None:
@@ -202,15 +240,24 @@ async def test_update_shipment_rejects_shipment_from_other_tenant() -> None:
 
     assert uow.committed is False
     assert uow.rolled_back is True
+    assert uow.audit_logs.items == []
 
 
 async def test_update_shipment_rejects_duplicate_tracking_number() -> None:
     uow = FakeUnitOfWork()
     tenant_id = uuid4()
 
-    customer = make_customer(tenant_id=tenant_id)
-    origin = make_location(tenant_id=tenant_id, code="ORIGIN")
-    destination = make_location(tenant_id=tenant_id, code="DEST")
+    customer = make_customer(
+        tenant_id=tenant_id,
+    )
+    origin = make_location(
+        tenant_id=tenant_id,
+        code="ORIGIN",
+    )
+    destination = make_location(
+        tenant_id=tenant_id,
+        code="DEST",
+    )
 
     first = make_shipment(
         tenant_id=tenant_id,
@@ -249,15 +296,25 @@ async def test_update_shipment_rejects_duplicate_tracking_number() -> None:
     assert second.tracking_number == "SHIP-002"
     assert uow.committed is False
     assert uow.rolled_back is True
+    assert uow.audit_logs.items == []
 
 
 async def test_update_shipment_allows_same_tracking_number() -> None:
     uow = FakeUnitOfWork()
     tenant_id = uuid4()
+    actor_id = uuid4()
 
-    customer = make_customer(tenant_id=tenant_id)
-    origin = make_location(tenant_id=tenant_id, code="ORIGIN")
-    destination = make_location(tenant_id=tenant_id, code="DEST")
+    customer = make_customer(
+        tenant_id=tenant_id,
+    )
+    origin = make_location(
+        tenant_id=tenant_id,
+        code="ORIGIN",
+    )
+    destination = make_location(
+        tenant_id=tenant_id,
+        code="DEST",
+    )
 
     shipment = make_shipment(
         tenant_id=tenant_id,
@@ -275,6 +332,7 @@ async def test_update_shipment_allows_same_tracking_number() -> None:
     result = await UpdateShipment(uow).execute(
         make_command(
             tenant_id=tenant_id,
+            actor_id=actor_id,
             shipment_id=shipment.id,
             customer_id=customer.id,
             origin_location_id=origin.id,
@@ -286,14 +344,44 @@ async def test_update_shipment_allows_same_tracking_number() -> None:
     assert result.tracking_number == "SHIP-001"
     assert uow.committed is True
 
+    assert len(uow.audit_logs.items) == 1
+
+    audit_log = uow.audit_logs.items[0]
+
+    assert audit_log.tenant_id == tenant_id
+    assert audit_log.actor_type == AuditActorType.USER
+    assert audit_log.actor_id == actor_id
+    assert audit_log.action == "shipment.updated"
+    assert audit_log.resource_type == "shipment"
+    assert audit_log.resource_id == shipment.id
+    assert audit_log.outcome == AuditOutcome.SUCCESS
+
+    assert audit_log.metadata_ == {
+        "tracking_number": "SHIP-001",
+        "customer_id": str(customer.id),
+        "origin_location_id": str(origin.id),
+        "destination_location_id": str(destination.id),
+        "service_type": ServiceType.EXPRESS.value,
+        "weight": "15.750",
+        "weight_unit": WeightUnit.KG.value,
+    }
+
 
 async def test_update_shipment_rejects_customer_from_other_tenant() -> None:
     uow = FakeUnitOfWork()
     tenant_id = uuid4()
 
-    customer = make_customer(tenant_id=uuid4())
-    origin = make_location(tenant_id=tenant_id, code="ORIGIN")
-    destination = make_location(tenant_id=tenant_id, code="DEST")
+    customer = make_customer(
+        tenant_id=uuid4(),
+    )
+    origin = make_location(
+        tenant_id=tenant_id,
+        code="ORIGIN",
+    )
+    destination = make_location(
+        tenant_id=tenant_id,
+        code="DEST",
+    )
 
     shipment = make_shipment(
         tenant_id=tenant_id,
@@ -320,15 +408,24 @@ async def test_update_shipment_rejects_customer_from_other_tenant() -> None:
 
     assert uow.committed is False
     assert uow.rolled_back is True
+    assert uow.audit_logs.items == []
 
 
 async def test_update_shipment_rejects_origin_from_other_tenant() -> None:
     uow = FakeUnitOfWork()
     tenant_id = uuid4()
 
-    customer = make_customer(tenant_id=tenant_id)
-    origin = make_location(tenant_id=uuid4(), code="ORIGIN")
-    destination = make_location(tenant_id=tenant_id, code="DEST")
+    customer = make_customer(
+        tenant_id=tenant_id,
+    )
+    origin = make_location(
+        tenant_id=uuid4(),
+        code="ORIGIN",
+    )
+    destination = make_location(
+        tenant_id=tenant_id,
+        code="DEST",
+    )
 
     shipment = make_shipment(
         tenant_id=tenant_id,
@@ -355,15 +452,24 @@ async def test_update_shipment_rejects_origin_from_other_tenant() -> None:
 
     assert uow.committed is False
     assert uow.rolled_back is True
+    assert uow.audit_logs.items == []
 
 
 async def test_update_shipment_rejects_destination_from_other_tenant() -> None:
     uow = FakeUnitOfWork()
     tenant_id = uuid4()
 
-    customer = make_customer(tenant_id=tenant_id)
-    origin = make_location(tenant_id=tenant_id, code="ORIGIN")
-    destination = make_location(tenant_id=uuid4(), code="DEST")
+    customer = make_customer(
+        tenant_id=tenant_id,
+    )
+    origin = make_location(
+        tenant_id=tenant_id,
+        code="ORIGIN",
+    )
+    destination = make_location(
+        tenant_id=uuid4(),
+        code="DEST",
+    )
 
     shipment = make_shipment(
         tenant_id=tenant_id,
@@ -390,3 +496,4 @@ async def test_update_shipment_rejects_destination_from_other_tenant() -> None:
 
     assert uow.committed is False
     assert uow.rolled_back is True
+    assert uow.audit_logs.items == []

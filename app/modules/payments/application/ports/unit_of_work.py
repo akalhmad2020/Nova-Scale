@@ -1,5 +1,6 @@
 from typing import Protocol
 
+from app.modules.audit.application.ports.repositories import AuditLogRepository
 from app.modules.billing.application.ports.invoice_repository import (
     InvoiceRepository,
 )
@@ -28,6 +29,8 @@ class PaymentsUnitOfWork(Protocol):
     ledger_accounts: LedgerAccountRepository
     journal_entries: JournalEntryRepository
     journal_lines: JournalLineRepository
+
+    audit_logs: AuditLogRepository
 
     async def __aenter__(self) -> "PaymentsUnitOfWork": ...
 

@@ -1,5 +1,10 @@
 from uuid import UUID
 
+from app.modules.audit.application.contracts import AuditRecord
+from app.modules.audit.application.use_cases.record_audit_log import (
+    RecordAuditLogUseCase,
+)
+from app.modules.audit.domain.enums import AuditActorType, AuditOutcome
 from app.modules.billing.application.exceptions import (
     InvalidInvoiceStateTransitionError,
     InvoiceNotFoundError,
@@ -26,6 +31,7 @@ class VoidInvoiceUseCase:
         *,
         tenant_id: UUID,
         invoice_id: UUID,
+        actor_id: UUID,
     ) -> Invoice:
         async with self._unit_of_work:
             invoice = await self._unit_of_work.invoices.get_by_id(
@@ -46,6 +52,31 @@ class VoidInvoiceUseCase:
 
             invoice.status = InvoiceStatus.VOID
 
+            audit = RecordAuditLogUseCase(
+                audit_logs=self._unit_of_work.audit_logs,
+            )
+
+            await audit.execute(
+                AuditRecord(
+                    tenant_id=tenant_id,
+                    actor_type=AuditActorType.USER,
+                    actor_id=actor_id,
+                    action="invoice.voided",
+                    resource_type="invoice",
+                    resource_id=invoice.id,
+                    outcome=AuditOutcome.SUCCESS,
+                    metadata={
+                        "invoice_number": invoice.invoice_number,
+                        "customer_id": str(invoice.customer_id),
+                        "currency": invoice.currency,
+                        "subtotal": str(invoice.subtotal),
+                        "tax_amount": str(invoice.tax_amount),
+                        "total_amount": str(invoice.total_amount),
+                    },
+                )
+            )
+
             await self._unit_of_work.commit()
             await self._unit_of_work.invoices.refresh(invoice)
+
             return invoice

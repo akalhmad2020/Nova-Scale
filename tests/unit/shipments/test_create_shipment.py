@@ -3,6 +3,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from app.modules.audit.domain.enums import AuditActorType, AuditOutcome
 from app.modules.customers.domain.enums import CustomerStatus
 from app.modules.customers.infrastructure.models.customer import Customer
 from app.modules.locations.domain.enums import LocationStatus, LocationType
@@ -68,9 +69,11 @@ def make_command(
     origin_location_id: UUID,
     destination_location_id: UUID,
     tracking_number: str = "SHIP-001",
+    actor_id: UUID | None = None,
 ) -> CreateShipmentCommand:
     return CreateShipmentCommand(
         tenant_id=tenant_id,
+        actor_id=actor_id or uuid4(),
         customer_id=customer_id,
         origin_location_id=origin_location_id,
         destination_location_id=destination_location_id,
@@ -87,6 +90,7 @@ def make_command(
 async def test_create_shipment_creates_draft_shipment() -> None:
     uow = FakeUnitOfWork()
     tenant_id = uuid4()
+    actor_id = uuid4()
 
     customer = make_customer(tenant_id=tenant_id)
 
@@ -109,6 +113,7 @@ async def test_create_shipment_creates_draft_shipment() -> None:
     result = await use_case.execute(
         make_command(
             tenant_id=tenant_id,
+            actor_id=actor_id,
             customer_id=customer.id,
             origin_location_id=origin.id,
             destination_location_id=destination.id,
@@ -129,6 +134,29 @@ async def test_create_shipment_creates_draft_shipment() -> None:
     assert result.reference == "ORDER-100"
     assert result.description == "Electronics"
     assert result.notes == "Handle carefully"
+
+    assert result.id is not None
+
+    assert len(uow.audit_logs.items) == 1
+
+    audit_log = uow.audit_logs.items[0]
+
+    assert audit_log.tenant_id == tenant_id
+    assert audit_log.actor_type == AuditActorType.USER
+    assert audit_log.actor_id == actor_id
+    assert audit_log.action == "shipment.created"
+    assert audit_log.resource_type == "shipment"
+    assert audit_log.resource_id == result.id
+    assert audit_log.outcome == AuditOutcome.SUCCESS
+    assert audit_log.metadata_ == {
+        "tracking_number": "SHIP-001",
+        "customer_id": str(customer.id),
+        "origin_location_id": str(origin.id),
+        "destination_location_id": str(destination.id),
+        "service_type": ServiceType.EXPRESS.value,
+        "weight": "12.500",
+        "weight_unit": WeightUnit.KG.value,
+    }
 
     assert uow.flushed is True
     assert uow.committed is True
@@ -192,6 +220,7 @@ async def test_create_shipment_rejects_duplicate_tracking_number() -> None:
             )
         )
 
+    assert uow.audit_logs.items == []
     assert uow.committed is False
     assert uow.rolled_back is True
 
@@ -230,6 +259,7 @@ async def test_create_shipment_rejects_customer_from_other_tenant() -> None:
             )
         )
 
+    assert uow.audit_logs.items == []
     assert uow.committed is False
     assert uow.rolled_back is True
 
@@ -265,6 +295,7 @@ async def test_create_shipment_rejects_origin_from_other_tenant() -> None:
             )
         )
 
+    assert uow.audit_logs.items == []
     assert uow.committed is False
     assert uow.rolled_back is True
 
@@ -300,6 +331,7 @@ async def test_create_shipment_rejects_destination_from_other_tenant() -> None:
             )
         )
 
+    assert uow.audit_logs.items == []
     assert uow.committed is False
     assert uow.rolled_back is True
 
@@ -344,4 +376,8 @@ async def test_create_shipment_allows_same_tracking_number_in_other_tenant() -> 
 
     assert result.tracking_number == "SHIP-001"
     assert result.tenant_id == tenant_id
+
+    assert len(uow.audit_logs.items) == 1
+    assert uow.audit_logs.items[0].action == "shipment.created"
+
     assert uow.committed is True

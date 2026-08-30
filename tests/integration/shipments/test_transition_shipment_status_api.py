@@ -13,6 +13,8 @@ from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
 from app.main import app
+from app.modules.audit.domain.enums import AuditActorType, AuditOutcome
+from app.modules.audit.infrastructure.models.audit_log import AuditLog
 from app.modules.customers.domain.enums import CustomerStatus
 from app.modules.customers.infrastructure.models.customer import Customer
 from app.modules.identity.domain.enums import (
@@ -67,46 +69,100 @@ async def cleanup_test_data(
 
     try:
         async with session_factory() as session:
-            user_id = await session.scalar(select(User.id).where(User.email == email))
+            user_id = await session.scalar(
+                select(User.id).where(
+                    User.email == email,
+                )
+            )
 
             tenant_ids = list(
                 (
-                    await session.scalars(select(Tenant.id).where(Tenant.slug.in_(tenant_slugs)))
+                    await session.scalars(
+                        select(Tenant.id).where(
+                            Tenant.slug.in_(tenant_slugs),
+                        )
+                    )
                 ).all()
             )
 
-            role_id = await session.scalar(select(Role.id).where(Role.name == role_name))
-
-            if tenant_ids:
-                await session.execute(delete(Shipment).where(Shipment.tenant_id.in_(tenant_ids)))
-
-                await session.execute(delete(Customer).where(Customer.tenant_id.in_(tenant_ids)))
-
-                await session.execute(delete(Location).where(Location.tenant_id.in_(tenant_ids)))
-
-            if user_id is not None:
-                await session.execute(delete(AuthSession).where(AuthSession.user_id == user_id))
-
-                await session.execute(delete(Membership).where(Membership.user_id == user_id))
+            role_id = await session.scalar(
+                select(Role.id).where(
+                    Role.name == role_name,
+                )
+            )
 
             if tenant_ids:
                 await session.execute(
-                    delete(Membership).where(Membership.tenant_id.in_(tenant_ids))
+                    delete(AuditLog).where(
+                        AuditLog.tenant_id.in_(tenant_ids),
+                    )
+                )
+
+                await session.execute(
+                    delete(Shipment).where(
+                        Shipment.tenant_id.in_(tenant_ids),
+                    )
+                )
+
+                await session.execute(
+                    delete(Customer).where(
+                        Customer.tenant_id.in_(tenant_ids),
+                    )
+                )
+
+                await session.execute(
+                    delete(Location).where(
+                        Location.tenant_id.in_(tenant_ids),
+                    )
+                )
+
+            if user_id is not None:
+                await session.execute(
+                    delete(AuthSession).where(
+                        AuthSession.user_id == user_id,
+                    )
+                )
+
+                await session.execute(
+                    delete(Membership).where(
+                        Membership.user_id == user_id,
+                    )
+                )
+
+            if tenant_ids:
+                await session.execute(
+                    delete(Membership).where(
+                        Membership.tenant_id.in_(tenant_ids),
+                    )
                 )
 
             if role_id is not None:
                 await session.execute(
-                    delete(RolePermission).where(RolePermission.role_id == role_id)
+                    delete(RolePermission).where(
+                        RolePermission.role_id == role_id,
+                    )
                 )
 
             if user_id is not None:
-                await session.execute(delete(User).where(User.id == user_id))
+                await session.execute(
+                    delete(User).where(
+                        User.id == user_id,
+                    )
+                )
 
             if tenant_ids:
-                await session.execute(delete(Tenant).where(Tenant.id.in_(tenant_ids)))
+                await session.execute(
+                    delete(Tenant).where(
+                        Tenant.id.in_(tenant_ids),
+                    )
+                )
 
             if role_id is not None:
-                await session.execute(delete(Role).where(Role.id == role_id))
+                await session.execute(
+                    delete(Role).where(
+                        Role.id == role_id,
+                    )
+                )
 
             await session.commit()
 
@@ -121,7 +177,13 @@ async def create_transition_context(
     tenant_slug: str,
     role_name: str,
     assign_permission: bool,
-) -> tuple[Tenant, Customer, Location, Location]:
+) -> tuple[
+    Tenant,
+    Customer,
+    Location,
+    Location,
+    User,
+]:
     settings = get_settings()
 
     engine = create_async_engine(
@@ -160,7 +222,9 @@ async def create_transition_context(
             )
 
             permission = await session.scalar(
-                select(Permission).where(Permission.code == Permissions.SHIPMENT_TRANSITION)
+                select(Permission).where(
+                    Permission.code == Permissions.SHIPMENT_TRANSITION,
+                )
             )
 
             if permission is None:
@@ -241,6 +305,7 @@ async def create_transition_context(
                 customer,
                 origin,
                 destination,
+                user,
             )
 
     finally:
@@ -250,7 +315,12 @@ async def create_transition_context(
 async def create_foreign_resources(
     *,
     tenant_slug: str,
-) -> tuple[Tenant, Customer, Location, Location]:
+) -> tuple[
+    Tenant,
+    Customer,
+    Location,
+    Location,
+]:
     settings = get_settings()
 
     engine = create_async_engine(
@@ -372,6 +442,57 @@ async def create_shipment(
         await engine.dispose()
 
 
+async def get_shipment_status_audit_logs(
+    *,
+    tenant_id: UUID,
+    shipment_id: UUID | None = None,
+) -> list[AuditLog]:
+    settings = get_settings()
+
+    engine = create_async_engine(
+        settings.database_url,
+        poolclass=NullPool,
+    )
+
+    session_factory = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autoflush=False,
+    )
+
+    try:
+        async with session_factory() as session:
+            statement = (
+                select(AuditLog)
+                .where(
+                    AuditLog.tenant_id == tenant_id,
+                    AuditLog.action == "shipment.status_changed",
+                    AuditLog.resource_type == "shipment",
+                )
+                .order_by(
+                    AuditLog.occurred_at.asc(),
+                    AuditLog.created_at.asc(),
+                )
+            )
+
+            if shipment_id is not None:
+                statement = statement.where(
+                    AuditLog.resource_id == shipment_id,
+                )
+
+            return list(
+                (
+                    await session.scalars(
+                        statement,
+                    )
+                ).all()
+            )
+
+    finally:
+        await engine.dispose()
+
+
 def login_and_get_access_token(
     *,
     email: str,
@@ -404,7 +525,13 @@ async def test_transition_shipment_endpoint_completes_full_lifecycle() -> None:
     tenant_slug = f"shipment-transition-tenant-{unique}"
     role_name = f"shipment-transition-role-{unique}"
 
-    tenant, customer, origin, destination = await create_transition_context(
+    (
+        tenant,
+        customer,
+        origin,
+        destination,
+        user,
+    ) = await create_transition_context(
         email=email,
         password=password,
         tenant_slug=tenant_slug,
@@ -466,6 +593,47 @@ async def test_transition_shipment_endpoint_completes_full_lifecycle() -> None:
             assert delivered_response.status_code == 200
             assert delivered_response.json()["status"] == "delivered"
 
+        audit_logs = await get_shipment_status_audit_logs(
+            tenant_id=tenant.id,
+            shipment_id=shipment.id,
+        )
+
+        assert len(audit_logs) == 3
+
+        first_audit = audit_logs[0]
+
+        assert first_audit.tenant_id == tenant.id
+        assert first_audit.actor_type == AuditActorType.USER
+        assert first_audit.actor_id == user.id
+        assert first_audit.action == "shipment.status_changed"
+        assert first_audit.resource_type == "shipment"
+        assert first_audit.resource_id == shipment.id
+        assert first_audit.outcome == AuditOutcome.SUCCESS
+        assert first_audit.metadata_ == {
+            "tracking_number": shipment.tracking_number,
+            "previous_status": ShipmentStatus.DRAFT.value,
+            "new_status": ShipmentStatus.READY.value,
+        }
+        assert first_audit.occurred_at is not None
+
+        second_audit = audit_logs[1]
+
+        assert second_audit.actor_id == user.id
+        assert second_audit.metadata_ == {
+            "tracking_number": shipment.tracking_number,
+            "previous_status": ShipmentStatus.READY.value,
+            "new_status": ShipmentStatus.IN_TRANSIT.value,
+        }
+
+        third_audit = audit_logs[2]
+
+        assert third_audit.actor_id == user.id
+        assert third_audit.metadata_ == {
+            "tracking_number": shipment.tracking_number,
+            "previous_status": ShipmentStatus.IN_TRANSIT.value,
+            "new_status": ShipmentStatus.DELIVERED.value,
+        }
+
     finally:
         await cleanup_test_data(
             email=email,
@@ -499,7 +667,13 @@ async def test_transition_shipment_endpoint_allows_cancellation(
     tenant_slug = f"shipment-cancel-tenant-{unique}"
     role_name = f"shipment-cancel-role-{unique}"
 
-    tenant, customer, origin, destination = await create_transition_context(
+    (
+        tenant,
+        customer,
+        origin,
+        destination,
+        user,
+    ) = await create_transition_context(
         email=email,
         password=password,
         tenant_slug=tenant_slug,
@@ -535,6 +709,29 @@ async def test_transition_shipment_endpoint_allows_cancellation(
 
         assert response.status_code == 200
         assert response.json()["status"] == "cancelled"
+
+        audit_logs = await get_shipment_status_audit_logs(
+            tenant_id=tenant.id,
+            shipment_id=shipment.id,
+        )
+
+        assert len(audit_logs) == 1
+
+        audit_log = audit_logs[0]
+
+        assert audit_log.tenant_id == tenant.id
+        assert audit_log.actor_type == AuditActorType.USER
+        assert audit_log.actor_id == user.id
+        assert audit_log.action == "shipment.status_changed"
+        assert audit_log.resource_type == "shipment"
+        assert audit_log.resource_id == shipment.id
+        assert audit_log.outcome == AuditOutcome.SUCCESS
+        assert audit_log.metadata_ == {
+            "tracking_number": shipment.tracking_number,
+            "previous_status": initial_status.value,
+            "new_status": ShipmentStatus.CANCELLED.value,
+        }
+        assert audit_log.occurred_at is not None
 
     finally:
         await cleanup_test_data(
@@ -573,7 +770,13 @@ async def test_transition_shipment_endpoint_rejects_invalid_transition(
     tenant_slug = f"shipment-invalid-transition-{unique}"
     role_name = f"shipment-invalid-transition-role-{unique}"
 
-    tenant, customer, origin, destination = await create_transition_context(
+    (
+        tenant,
+        customer,
+        origin,
+        destination,
+        _,
+    ) = await create_transition_context(
         email=email,
         password=password,
         tenant_slug=tenant_slug,
@@ -608,7 +811,16 @@ async def test_transition_shipment_endpoint_rejects_invalid_transition(
             )
 
         assert response.status_code == 422
-        assert response.json() == {"detail": "Invalid shipment status transition"}
+        assert response.json() == {
+            "detail": "Invalid shipment status transition",
+        }
+
+        audit_logs = await get_shipment_status_audit_logs(
+            tenant_id=tenant.id,
+            shipment_id=shipment.id,
+        )
+
+        assert audit_logs == []
 
     finally:
         await cleanup_test_data(
@@ -627,7 +839,13 @@ async def test_transition_shipment_endpoint_requires_permission() -> None:
     tenant_slug = f"shipment-transition-denied-{unique}"
     role_name = f"shipment-transition-denied-role-{unique}"
 
-    tenant, customer, origin, destination = await create_transition_context(
+    (
+        tenant,
+        customer,
+        origin,
+        destination,
+        _,
+    ) = await create_transition_context(
         email=email,
         password=password,
         tenant_slug=tenant_slug,
@@ -661,7 +879,16 @@ async def test_transition_shipment_endpoint_requires_permission() -> None:
             )
 
         assert response.status_code == 403
-        assert response.json() == {"detail": "Permission denied"}
+        assert response.json() == {
+            "detail": "Permission denied",
+        }
+
+        audit_logs = await get_shipment_status_audit_logs(
+            tenant_id=tenant.id,
+            shipment_id=shipment.id,
+        )
+
+        assert audit_logs == []
 
     finally:
         await cleanup_test_data(
@@ -680,7 +907,7 @@ async def test_transition_shipment_endpoint_rejects_unknown_shipment() -> None:
     tenant_slug = f"shipment-transition-missing-{unique}"
     role_name = f"shipment-transition-missing-role-{unique}"
 
-    tenant, _, _, _ = await create_transition_context(
+    tenant, _, _, _, _ = await create_transition_context(
         email=email,
         password=password,
         tenant_slug=tenant_slug,
@@ -694,9 +921,11 @@ async def test_transition_shipment_endpoint_rejects_unknown_shipment() -> None:
             password=password,
         )
 
+        missing_shipment_id = uuid4()
+
         with TestClient(app) as client:
             response = client.post(
-                f"/api/v1/tenants/{tenant.id}/shipments/{uuid4()}/transition",
+                f"/api/v1/tenants/{tenant.id}/shipments/{missing_shipment_id}/transition",
                 headers={
                     "Authorization": f"Bearer {access_token}",
                 },
@@ -706,7 +935,16 @@ async def test_transition_shipment_endpoint_rejects_unknown_shipment() -> None:
             )
 
         assert response.status_code == 404
-        assert response.json() == {"detail": "Shipment not found"}
+        assert response.json() == {
+            "detail": "Shipment not found",
+        }
+
+        audit_logs = await get_shipment_status_audit_logs(
+            tenant_id=tenant.id,
+            shipment_id=missing_shipment_id,
+        )
+
+        assert audit_logs == []
 
     finally:
         await cleanup_test_data(
@@ -727,7 +965,7 @@ async def test_transition_shipment_endpoint_rejects_other_tenant_shipment() -> N
     foreign_slug = f"shipment-transition-foreign-{unique}"
     role_name = f"shipment-transition-isolation-role-{unique}"
 
-    tenant, _, _, _ = await create_transition_context(
+    tenant, _, _, _, _ = await create_transition_context(
         email=email,
         password=password,
         tenant_slug=tenant_slug,
@@ -770,7 +1008,22 @@ async def test_transition_shipment_endpoint_rejects_other_tenant_shipment() -> N
             )
 
         assert response.status_code == 404
-        assert response.json() == {"detail": "Shipment not found"}
+        assert response.json() == {
+            "detail": "Shipment not found",
+        }
+
+        tenant_audit_logs = await get_shipment_status_audit_logs(
+            tenant_id=tenant.id,
+        )
+
+        assert tenant_audit_logs == []
+
+        foreign_audit_logs = await get_shipment_status_audit_logs(
+            tenant_id=foreign_tenant.id,
+            shipment_id=foreign_shipment.id,
+        )
+
+        assert foreign_audit_logs == []
 
     finally:
         await cleanup_test_data(

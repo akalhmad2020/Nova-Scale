@@ -3,6 +3,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from app.modules.audit.domain.enums import AuditActorType, AuditOutcome
 from app.modules.billing.application.exceptions import (
     CustomerNotFoundError,
     InvalidInvoiceAmountError,
@@ -613,11 +614,14 @@ async def test_remove_invoice_line_rejects_non_draft_invoice() -> None:
 @pytest.mark.asyncio
 async def test_issue_invoice() -> None:
     tenant_id = uuid4()
+    actor_id = uuid4()
+
     unit_of_work = FakeBillingUnitOfWork()
     add_invoice_ledger_accounts(
         unit_of_work,
         tenant_id=tenant_id,
     )
+
     create_invoice = CreateInvoiceUseCase(unit_of_work)
     add_line = AddInvoiceLineUseCase(unit_of_work)
     issue_invoice = IssueInvoiceUseCase(unit_of_work)
@@ -640,6 +644,7 @@ async def test_issue_invoice() -> None:
     result = await issue_invoice.execute(
         tenant_id=tenant_id,
         invoice_id=invoice.id,
+        actor_id=actor_id,
     )
 
     assert result.status == InvoiceStatus.ISSUED
@@ -649,6 +654,8 @@ async def test_issue_invoice() -> None:
 @pytest.mark.asyncio
 async def test_issue_invoice_rejects_invoice_without_lines() -> None:
     tenant_id = uuid4()
+    actor_id = uuid4()
+
     unit_of_work = FakeBillingUnitOfWork()
 
     create_invoice = CreateInvoiceUseCase(unit_of_work)
@@ -665,12 +672,15 @@ async def test_issue_invoice_rejects_invoice_without_lines() -> None:
         await issue_invoice.execute(
             tenant_id=tenant_id,
             invoice_id=invoice.id,
+            actor_id=actor_id,
         )
 
 
 @pytest.mark.asyncio
 async def test_draft_invoice_can_be_voided() -> None:
     tenant_id = uuid4()
+    actor_id = uuid4()
+
     unit_of_work = FakeBillingUnitOfWork()
 
     create_invoice = CreateInvoiceUseCase(unit_of_work)
@@ -683,18 +693,49 @@ async def test_draft_invoice_can_be_voided() -> None:
         currency="USD",
     )
 
+    unit_of_work.committed = False
+
     result = await void_invoice.execute(
         tenant_id=tenant_id,
         invoice_id=invoice.id,
+        actor_id=actor_id,
     )
 
     assert result.status == InvoiceStatus.VOID
+
+    assert len(unit_of_work.fake_audit_logs.items) == 1
+
+    audit_log = unit_of_work.fake_audit_logs.items[0]
+
+    assert audit_log.tenant_id == tenant_id
+    assert audit_log.actor_type == AuditActorType.USER
+    assert audit_log.actor_id == actor_id
+
+    assert audit_log.action == "invoice.voided"
+    assert audit_log.resource_type == "invoice"
+    assert audit_log.resource_id == invoice.id
+    assert audit_log.outcome == AuditOutcome.SUCCESS
+
+    assert audit_log.metadata_ == {
+        "invoice_number": "INV-0001",
+        "customer_id": str(invoice.customer_id),
+        "currency": "USD",
+        "subtotal": "0.00",
+        "tax_amount": "0.00",
+        "total_amount": "0.00",
+    }
+
+    assert unit_of_work.committed is True
 
 
 @pytest.mark.asyncio
 async def test_paid_invoice_cannot_be_voided() -> None:
     tenant_id = uuid4()
+    issue_actor_id = uuid4()
+    void_actor_id = uuid4()
+
     unit_of_work = FakeBillingUnitOfWork()
+
     add_invoice_ledger_accounts(
         unit_of_work,
         tenant_id=tenant_id,
@@ -723,15 +764,31 @@ async def test_paid_invoice_cannot_be_voided() -> None:
     await issue_invoice.execute(
         tenant_id=tenant_id,
         invoice_id=invoice.id,
+        actor_id=issue_actor_id,
     )
 
     invoice.status = InvoiceStatus.PAID
+
+    audit_count_before_void = len(unit_of_work.fake_audit_logs.items)
+
+    unit_of_work.committed = False
 
     with pytest.raises(InvalidInvoiceStateTransitionError):
         await void_invoice.execute(
             tenant_id=tenant_id,
             invoice_id=invoice.id,
+            actor_id=void_actor_id,
         )
+
+    assert invoice.status == InvoiceStatus.PAID
+
+    assert len(unit_of_work.fake_audit_logs.items) == audit_count_before_void
+
+    assert all(
+        audit_log.action != "invoice.voided" for audit_log in unit_of_work.fake_audit_logs.items
+    )
+
+    assert unit_of_work.committed is False
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,12 @@
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from uuid import UUID
 
+from app.modules.audit.application.contracts import AuditRecord
+from app.modules.audit.application.use_cases.record_audit_log import (
+    RecordAuditLogUseCase,
+)
+from app.modules.audit.domain.enums import AuditActorType, AuditOutcome
 from app.modules.shipments.application.exceptions import (
     InvalidShipmentStatusTransitionError,
     ShipmentNotFoundError,
@@ -16,6 +22,7 @@ from app.modules.shipments.infrastructure.models.shipment import Shipment
 @dataclass(frozen=True, slots=True)
 class TransitionShipmentStatusCommand:
     tenant_id: UUID
+    actor_id: UUID
     shipment_id: UUID
     target_status: ShipmentStatus
 
@@ -40,15 +47,42 @@ class TransitionShipmentStatus:
             if shipment is None:
                 raise ShipmentNotFoundError
 
+            previous_status = ShipmentStatus(shipment.status)
+
             if not can_transition_shipment_status(
-                shipment.status,
+                previous_status,
                 command.target_status,
             ):
                 raise InvalidShipmentStatusTransitionError
 
+            occurred_at = datetime.now(UTC)
+
             shipment.status = command.target_status
 
             await uow.flush()
+
+            audit = RecordAuditLogUseCase(
+                audit_logs=uow.audit_logs,
+            )
+
+            await audit.execute(
+                AuditRecord(
+                    tenant_id=command.tenant_id,
+                    actor_type=AuditActorType.USER,
+                    actor_id=command.actor_id,
+                    action="shipment.status_changed",
+                    resource_type="shipment",
+                    resource_id=shipment.id,
+                    outcome=AuditOutcome.SUCCESS,
+                    metadata={
+                        "tracking_number": shipment.tracking_number,
+                        "previous_status": previous_status.value,
+                        "new_status": command.target_status.value,
+                    },
+                    occurred_at=occurred_at,
+                )
+            )
+
             await uow.commit()
             await uow.refresh(shipment)
 

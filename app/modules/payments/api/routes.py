@@ -308,12 +308,12 @@ async def post_payment(
         Depends(get_post_payment_use_case),
     ],
 ) -> PaymentResponse:
-    del membership
 
     try:
         payment = await use_case.execute(
             tenant_id=tenant_id,
             payment_id=payment_id,
+            actor_id=membership.user_id,
         )
     except PaymentNotFoundError as exc:
         raise HTTPException(
@@ -380,12 +380,12 @@ async def void_payment(
         Depends(get_void_payment_use_case),
     ],
 ) -> PaymentResponse:
-    del membership
 
     try:
         payment = await use_case.execute(
             tenant_id=tenant_id,
             payment_id=payment_id,
+            actor_id=membership.user_id,
         )
     except PaymentNotFoundError as exc:
         raise HTTPException(

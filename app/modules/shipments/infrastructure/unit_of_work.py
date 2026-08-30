@@ -2,6 +2,9 @@ from types import TracebackType
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.modules.audit.infrastructure.repositories.sqlalchemy import (
+    SQLAlchemyAuditLogRepository,
+)
 from app.modules.customers.infrastructure.repositories.customer_repository import (
     CustomerRepository,
 )
@@ -25,6 +28,7 @@ class SQLAlchemyUnitOfWork:
         self.shipments: ShipmentRepository
         self.customers: CustomerRepository
         self.locations: LocationRepository
+        self.audit_logs: SQLAlchemyAuditLogRepository
 
     async def __aenter__(self) -> "SQLAlchemyUnitOfWork":
         self._session = self._session_factory()
@@ -32,6 +36,7 @@ class SQLAlchemyUnitOfWork:
         self.shipments = ShipmentRepository(self._session)
         self.customers = CustomerRepository(self._session)
         self.locations = LocationRepository(self._session)
+        self.audit_logs = SQLAlchemyAuditLogRepository(self._session)
 
         return self
 

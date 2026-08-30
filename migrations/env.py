@@ -6,6 +6,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.core.config import get_settings
+from app.modules.audit.infrastructure.models import AuditLog  # noqa: F401
 from app.modules.billing.infrastructure.models.invoice import Invoice  # noqa: F401
 from app.modules.billing.infrastructure.models.invoice_line import InvoiceLine  # noqa: F401
 from app.modules.carriers.infrastructure.models import (  # noqa: F401

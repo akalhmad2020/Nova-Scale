@@ -1,6 +1,7 @@
 from types import TracebackType
 from typing import Protocol, Self
 
+from app.modules.audit.application.ports.repositories import AuditLogRepository
 from app.modules.billing.application.ports.invoice_line_repository import (
     InvoiceLineRepository,
 )
@@ -34,6 +35,7 @@ class BillingUnitOfWork(Protocol):
     journal_lines: JournalLineRepository
 
     outbox_messages: OutboxMessageRepository
+    audit_logs: AuditLogRepository
 
     async def __aenter__(self) -> Self: ...
 

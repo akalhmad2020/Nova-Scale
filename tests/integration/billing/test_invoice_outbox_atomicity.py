@@ -141,6 +141,7 @@ async def test_issue_invoice_commits_invoice_ledger_and_outbox_atomically() -> N
         result = await use_case.execute(
             tenant_id=tenant.id,
             invoice_id=invoice.id,
+            actor_id=uuid4(),
         )
 
         assert result.status == InvoiceStatus.ISSUED.value
@@ -269,6 +270,7 @@ async def test_issue_invoice_rolls_back_invoice_and_ledger_when_outbox_fails(
             await use_case.execute(
                 tenant_id=tenant.id,
                 invoice_id=invoice.id,
+                actor_id=uuid4(),
             )
 
         async with session_factory() as verification_session:
