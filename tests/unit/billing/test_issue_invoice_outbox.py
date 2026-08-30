@@ -3,6 +3,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from app.modules.audit.domain.enums import AuditActorType, AuditOutcome
 from app.modules.billing.application.use_cases.issue_invoice import (
     INVOICE_ISSUED_EVENT_TYPE,
     IssueInvoiceUseCase,
@@ -50,6 +51,7 @@ async def test_issue_invoice_creates_pending_outbox_event() -> None:
     tenant_id = uuid4()
     customer_id = uuid4()
     invoice_id = uuid4()
+    actor_id = uuid4()
 
     invoice = Invoice(
         tenant_id=tenant_id,
@@ -86,6 +88,7 @@ async def test_issue_invoice_creates_pending_outbox_event() -> None:
         code="1100",
         name="Accounts Receivable",
     )
+
     add_ledger_account(
         uow,
         tenant_id=tenant_id,
@@ -94,6 +97,7 @@ async def test_issue_invoice_creates_pending_outbox_event() -> None:
         code="4000",
         name="Revenue",
     )
+
     add_ledger_account(
         uow,
         tenant_id=tenant_id,
@@ -108,6 +112,7 @@ async def test_issue_invoice_creates_pending_outbox_event() -> None:
     result = await use_case.execute(
         tenant_id=tenant_id,
         invoice_id=invoice_id,
+        actor_id=actor_id,
     )
 
     assert result.status == InvoiceStatus.ISSUED.value
@@ -137,6 +142,32 @@ async def test_issue_invoice_creates_pending_outbox_event() -> None:
         "total_amount": "110.00",
         "issued_at": result.issued_at.isoformat(),
     }
+
+    assert len(uow.fake_audit_logs.items) == 1
+
+    audit_log = uow.fake_audit_logs.items[0]
+
+    assert audit_log.tenant_id == tenant_id
+    assert audit_log.actor_type == AuditActorType.USER
+    assert audit_log.actor_id == actor_id
+
+    assert audit_log.action == "invoice.issued"
+
+    assert audit_log.resource_type == "invoice"
+    assert audit_log.resource_id == invoice_id
+
+    assert audit_log.outcome == AuditOutcome.SUCCESS
+
+    assert audit_log.metadata_ == {
+        "invoice_number": "INV-OUTBOX-001",
+        "customer_id": str(customer_id),
+        "currency": "USD",
+        "subtotal": "100.00",
+        "tax_amount": "10.00",
+        "total_amount": "110.00",
+    }
+
+    assert audit_log.occurred_at == result.issued_at
 
     assert uow.committed is True
     assert uow.rolled_back is False

@@ -1,5 +1,9 @@
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.modules.audit.application.ports.repositories import AuditLogRepository
+from app.modules.audit.infrastructure.repositories.sqlalchemy import (
+    SQLAlchemyAuditLogRepository,
+)
 from app.modules.billing.application.ports.invoice_repository import (
     InvoiceRepository,
 )
@@ -57,6 +61,8 @@ class SQLAlchemyPaymentsUnitOfWork:
             self._session
         )
         self.journal_lines: JournalLineRepository = SQLAlchemyJournalLineRepository(self._session)
+
+        self.audit_logs: AuditLogRepository = SQLAlchemyAuditLogRepository(self._session)
 
     async def __aenter__(self) -> "SQLAlchemyPaymentsUnitOfWork":
         return self

@@ -3,6 +3,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from app.modules.audit.domain.enums import AuditActorType, AuditOutcome
 from app.modules.billing.domain.enums import InvoiceStatus
 from app.modules.billing.infrastructure.models.invoice import Invoice
 from app.modules.ledger.application.exceptions import (
@@ -148,6 +149,7 @@ def make_allocation(
 async def test_post_partial_payment_keeps_invoice_issued() -> None:
     tenant_id = uuid4()
     customer_id = uuid4()
+    actor_id = uuid4()
 
     unit_of_work = FakePaymentsUnitOfWork()
 
@@ -182,6 +184,7 @@ async def test_post_partial_payment_keeps_invoice_issued() -> None:
     result = await use_case.execute(
         tenant_id=tenant_id,
         payment_id=payment.id,
+        actor_id=actor_id,
     )
 
     assert result.status == PaymentStatus.POSTED
@@ -197,6 +200,7 @@ async def test_post_partial_payment_keeps_invoice_issued() -> None:
 async def test_post_payment_marks_fully_paid_invoice_as_paid() -> None:
     tenant_id = uuid4()
     customer_id = uuid4()
+    actor_id = uuid4()
 
     unit_of_work = FakePaymentsUnitOfWork()
 
@@ -231,6 +235,7 @@ async def test_post_payment_marks_fully_paid_invoice_as_paid() -> None:
     await use_case.execute(
         tenant_id=tenant_id,
         payment_id=payment.id,
+        actor_id=actor_id,
     )
 
     assert payment.status == PaymentStatus.POSTED
@@ -243,9 +248,79 @@ async def test_post_payment_marks_fully_paid_invoice_as_paid() -> None:
 
 
 @pytest.mark.asyncio
+async def test_post_payment_records_user_audit_log() -> None:
+    tenant_id = uuid4()
+    customer_id = uuid4()
+    actor_id = uuid4()
+
+    unit_of_work = FakePaymentsUnitOfWork()
+
+    add_payment_ledger_accounts(
+        unit_of_work,
+        tenant_id=tenant_id,
+    )
+
+    payment = make_payment(
+        tenant_id=tenant_id,
+        customer_id=customer_id,
+        amount=Decimal("100.00"),
+    )
+
+    invoice = make_invoice(
+        tenant_id=tenant_id,
+        customer_id=customer_id,
+        total_amount=Decimal("100.00"),
+    )
+
+    allocation = make_allocation(
+        tenant_id=tenant_id,
+        payment_id=payment.id,
+        invoice_id=invoice.id,
+        amount=Decimal("100.00"),
+    )
+
+    unit_of_work.fake_payments.items.append(payment)
+    unit_of_work.fake_invoices.items.append(invoice)
+    unit_of_work.fake_payment_allocations.items.append(allocation)
+
+    use_case = PostPaymentUseCase(unit_of_work)
+
+    await use_case.execute(
+        tenant_id=tenant_id,
+        payment_id=payment.id,
+        actor_id=actor_id,
+    )
+
+    assert len(unit_of_work.fake_audit_logs.items) == 1
+
+    audit_log = unit_of_work.fake_audit_logs.items[0]
+
+    assert audit_log.tenant_id == tenant_id
+    assert audit_log.actor_type == AuditActorType.USER
+    assert audit_log.actor_id == actor_id
+
+    assert audit_log.action == "payment.posted"
+
+    assert audit_log.resource_type == "payment"
+    assert audit_log.resource_id == payment.id
+
+    assert audit_log.outcome == AuditOutcome.SUCCESS
+
+    assert audit_log.metadata_ == {
+        "payment_number": payment.payment_number,
+        "amount": str(payment.amount),
+        "currency": payment.currency,
+    }
+
+    assert audit_log.occurred_at == payment.posted_at
+    assert unit_of_work.committed is True
+
+
+@pytest.mark.asyncio
 async def test_post_payment_marks_invoice_paid_using_previous_posted_payment() -> None:
     tenant_id = uuid4()
     customer_id = uuid4()
+    actor_id = uuid4()
 
     unit_of_work = FakePaymentsUnitOfWork()
 
@@ -293,6 +368,7 @@ async def test_post_payment_marks_invoice_paid_using_previous_posted_payment() -
     await use_case.execute(
         tenant_id=tenant_id,
         payment_id=current_payment.id,
+        actor_id=actor_id,
     )
 
     assert current_payment.status == PaymentStatus.POSTED
@@ -310,15 +386,18 @@ async def test_post_payment_rejects_missing_payment() -> None:
         await use_case.execute(
             tenant_id=uuid4(),
             payment_id=uuid4(),
+            actor_id=uuid4(),
         )
 
     assert unit_of_work.committed is False
+    assert unit_of_work.fake_audit_logs.items == []
 
 
 @pytest.mark.asyncio
 async def test_post_payment_requires_draft_status() -> None:
     tenant_id = uuid4()
     customer_id = uuid4()
+    actor_id = uuid4()
 
     unit_of_work = FakePaymentsUnitOfWork()
 
@@ -335,15 +414,18 @@ async def test_post_payment_requires_draft_status() -> None:
         await use_case.execute(
             tenant_id=tenant_id,
             payment_id=payment.id,
+            actor_id=actor_id,
         )
 
     assert unit_of_work.committed is False
+    assert unit_of_work.fake_audit_logs.items == []
 
 
 @pytest.mark.asyncio
 async def test_post_payment_requires_at_least_one_allocation() -> None:
     tenant_id = uuid4()
     customer_id = uuid4()
+    actor_id = uuid4()
 
     unit_of_work = FakePaymentsUnitOfWork()
 
@@ -359,16 +441,19 @@ async def test_post_payment_requires_at_least_one_allocation() -> None:
         await use_case.execute(
             tenant_id=tenant_id,
             payment_id=payment.id,
+            actor_id=actor_id,
         )
 
     assert payment.status == PaymentStatus.DRAFT
     assert unit_of_work.committed is False
+    assert unit_of_work.fake_audit_logs.items == []
 
 
 @pytest.mark.asyncio
 async def test_post_payment_rejects_allocation_total_above_payment_amount() -> None:
     tenant_id = uuid4()
     customer_id = uuid4()
+    actor_id = uuid4()
 
     unit_of_work = FakePaymentsUnitOfWork()
 
@@ -399,16 +484,19 @@ async def test_post_payment_rejects_allocation_total_above_payment_amount() -> N
         await use_case.execute(
             tenant_id=tenant_id,
             payment_id=payment.id,
+            actor_id=actor_id,
         )
 
     assert payment.status == PaymentStatus.DRAFT
     assert unit_of_work.committed is False
+    assert unit_of_work.fake_audit_logs.items == []
 
 
 @pytest.mark.asyncio
 async def test_post_payment_rejects_payment_that_is_not_fully_allocated() -> None:
     tenant_id = uuid4()
     customer_id = uuid4()
+    actor_id = uuid4()
 
     unit_of_work = FakePaymentsUnitOfWork()
 
@@ -441,6 +529,7 @@ async def test_post_payment_rejects_payment_that_is_not_fully_allocated() -> Non
         await use_case.execute(
             tenant_id=tenant_id,
             payment_id=payment.id,
+            actor_id=actor_id,
         )
 
     assert payment.status == PaymentStatus.DRAFT
@@ -448,12 +537,14 @@ async def test_post_payment_rejects_payment_that_is_not_fully_allocated() -> Non
     assert invoice.status == InvoiceStatus.ISSUED
     assert invoice.paid_at is None
     assert unit_of_work.committed is False
+    assert unit_of_work.fake_audit_logs.items == []
 
 
 @pytest.mark.asyncio
 async def test_post_payment_rejects_invalid_invoice() -> None:
     tenant_id = uuid4()
     customer_id = uuid4()
+    actor_id = uuid4()
 
     unit_of_work = FakePaymentsUnitOfWork()
 
@@ -483,16 +574,19 @@ async def test_post_payment_rejects_invalid_invoice() -> None:
         await use_case.execute(
             tenant_id=tenant_id,
             payment_id=payment.id,
+            actor_id=actor_id,
         )
 
     assert payment.status == PaymentStatus.DRAFT
     assert unit_of_work.committed is False
+    assert unit_of_work.fake_audit_logs.items == []
 
 
 @pytest.mark.asyncio
 async def test_post_payment_rejects_currency_mismatch() -> None:
     tenant_id = uuid4()
     customer_id = uuid4()
+    actor_id = uuid4()
 
     unit_of_work = FakePaymentsUnitOfWork()
 
@@ -523,16 +617,19 @@ async def test_post_payment_rejects_currency_mismatch() -> None:
         await use_case.execute(
             tenant_id=tenant_id,
             payment_id=payment.id,
+            actor_id=actor_id,
         )
 
     assert payment.status == PaymentStatus.DRAFT
     assert unit_of_work.committed is False
+    assert unit_of_work.fake_audit_logs.items == []
 
 
 @pytest.mark.asyncio
 async def test_post_payment_rejects_invoice_overpayment() -> None:
     tenant_id = uuid4()
     customer_id = uuid4()
+    actor_id = uuid4()
 
     unit_of_work = FakePaymentsUnitOfWork()
 
@@ -576,17 +673,20 @@ async def test_post_payment_rejects_invoice_overpayment() -> None:
         await use_case.execute(
             tenant_id=tenant_id,
             payment_id=current_payment.id,
+            actor_id=actor_id,
         )
 
     assert current_payment.status == PaymentStatus.DRAFT
     assert invoice.status == InvoiceStatus.ISSUED
     assert unit_of_work.committed is False
+    assert unit_of_work.fake_audit_logs.items == []
 
 
 @pytest.mark.asyncio
 async def test_post_payment_creates_balanced_ledger_journal() -> None:
     tenant_id = uuid4()
     customer_id = uuid4()
+    actor_id = uuid4()
 
     unit_of_work = FakePaymentsUnitOfWork()
 
@@ -621,6 +721,7 @@ async def test_post_payment_creates_balanced_ledger_journal() -> None:
     await use_case.execute(
         tenant_id=tenant_id,
         payment_id=payment.id,
+        actor_id=actor_id,
     )
 
     assert len(unit_of_work.fake_journal_entries.items) == 1
@@ -668,6 +769,7 @@ async def test_post_payment_creates_balanced_ledger_journal() -> None:
 async def test_post_payment_rolls_back_when_cash_account_is_missing() -> None:
     tenant_id = uuid4()
     customer_id = uuid4()
+    actor_id = uuid4()
 
     unit_of_work = FakePaymentsUnitOfWork()
 
@@ -707,6 +809,7 @@ async def test_post_payment_rolls_back_when_cash_account_is_missing() -> None:
         await use_case.execute(
             tenant_id=tenant_id,
             payment_id=payment.id,
+            actor_id=actor_id,
         )
 
     assert payment.status == PaymentStatus.DRAFT
@@ -715,6 +818,7 @@ async def test_post_payment_rolls_back_when_cash_account_is_missing() -> None:
     assert invoice.paid_at is None
     assert unit_of_work.fake_journal_entries.items == []
     assert unit_of_work.fake_journal_lines.items == []
+    assert unit_of_work.fake_audit_logs.items == []
     assert unit_of_work.committed is False
     assert unit_of_work.rolled_back is True
 
@@ -723,6 +827,7 @@ async def test_post_payment_rolls_back_when_cash_account_is_missing() -> None:
 async def test_post_payment_rolls_back_when_accounts_receivable_is_inactive() -> None:
     tenant_id = uuid4()
     customer_id = uuid4()
+    actor_id = uuid4()
 
     unit_of_work = FakePaymentsUnitOfWork()
 
@@ -776,6 +881,7 @@ async def test_post_payment_rolls_back_when_accounts_receivable_is_inactive() ->
         await use_case.execute(
             tenant_id=tenant_id,
             payment_id=payment.id,
+            actor_id=actor_id,
         )
 
     assert payment.status == PaymentStatus.DRAFT
@@ -784,5 +890,6 @@ async def test_post_payment_rolls_back_when_accounts_receivable_is_inactive() ->
     assert invoice.paid_at is None
     assert unit_of_work.fake_journal_entries.items == []
     assert unit_of_work.fake_journal_lines.items == []
+    assert unit_of_work.fake_audit_logs.items == []
     assert unit_of_work.committed is False
     assert unit_of_work.rolled_back is True

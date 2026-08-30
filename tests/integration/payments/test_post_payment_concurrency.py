@@ -177,6 +177,7 @@ async def test_concurrent_post_payments_do_not_overpay_invoice(
         return await use_case.execute(
             tenant_id=tenant_id,
             payment_id=payment_id,
+            actor_id=uuid4(),
         )
 
     try:

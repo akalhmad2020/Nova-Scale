@@ -1,7 +1,10 @@
 from collections.abc import Sequence
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
+from app.modules.audit.application.ports.repositories import AuditLogRepository
+from app.modules.audit.infrastructure.models.audit_log import AuditLog
 from app.modules.billing.application.ports.invoice_repository import (
     InvoiceRepository,
 )
@@ -317,11 +320,86 @@ class FakeInvoiceRepository:
         return None
 
 
+class FakeAuditLogRepository:
+    def __init__(self) -> None:
+        self.items: list[AuditLog] = []
+
+    async def add(
+        self,
+        audit_log: AuditLog,
+    ) -> None:
+        self.items.append(audit_log)
+
+    async def get_by_id(
+        self,
+        *,
+        tenant_id: UUID,
+        audit_log_id: UUID,
+    ) -> AuditLog | None:
+        return next(
+            (
+                audit_log
+                for audit_log in self.items
+                if audit_log.tenant_id == tenant_id and audit_log.id == audit_log_id
+            ),
+            None,
+        )
+
+    async def list_for_tenant(
+        self,
+        *,
+        tenant_id: UUID,
+        limit: int = 100,
+        offset: int = 0,
+        actor_id: UUID | None = None,
+        action: str | None = None,
+        resource_type: str | None = None,
+        resource_id: UUID | None = None,
+        occurred_from: datetime | None = None,
+        occurred_to: datetime | None = None,
+    ) -> Sequence[AuditLog]:
+        items = [audit_log for audit_log in self.items if audit_log.tenant_id == tenant_id]
+
+        if actor_id is not None:
+            items = [audit_log for audit_log in items if audit_log.actor_id == actor_id]
+
+        if action is not None:
+            items = [audit_log for audit_log in items if audit_log.action == action]
+
+        if resource_type is not None:
+            items = [audit_log for audit_log in items if audit_log.resource_type == resource_type]
+
+        if resource_id is not None:
+            items = [audit_log for audit_log in items if audit_log.resource_id == resource_id]
+
+        if occurred_from is not None:
+            items = [audit_log for audit_log in items if audit_log.occurred_at >= occurred_from]
+
+        if occurred_to is not None:
+            items = [audit_log for audit_log in items if audit_log.occurred_at <= occurred_to]
+
+        items.sort(
+            key=lambda audit_log: (
+                audit_log.occurred_at,
+                audit_log.id,
+            ),
+            reverse=True,
+        )
+
+        return items[offset : offset + limit]
+
+
 class FakePaymentsUnitOfWork:
     payments: PaymentRepository
     payment_allocations: PaymentAllocationRepository
     customers: CustomerRepository
     invoices: InvoiceRepository
+
+    ledger_accounts: LedgerAccountRepository
+    journal_entries: JournalEntryRepository
+    journal_lines: JournalLineRepository
+
+    audit_logs: AuditLogRepository
 
     def __init__(self) -> None:
         self.fake_payments = FakePaymentRepository()
@@ -345,6 +423,9 @@ class FakePaymentsUnitOfWork:
         self.ledger_accounts: LedgerAccountRepository = self.fake_ledger_accounts
         self.journal_entries: JournalEntryRepository = self.fake_journal_entries
         self.journal_lines: JournalLineRepository = self.fake_journal_lines
+
+        self.fake_audit_logs = FakeAuditLogRepository()
+        self.audit_logs: AuditLogRepository = self.fake_audit_logs
 
         self.committed = False
         self.rolled_back = False

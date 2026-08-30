@@ -2,6 +2,11 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
+from app.modules.audit.application.contracts import AuditRecord
+from app.modules.audit.application.use_cases.record_audit_log import (
+    RecordAuditLogUseCase,
+)
+from app.modules.audit.domain.enums import AuditActorType, AuditOutcome
 from app.modules.billing.domain.enums import InvoiceStatus
 from app.modules.billing.infrastructure.models.invoice import Invoice
 from app.modules.ledger.application.exceptions import LedgerAccountNotFoundError
@@ -39,6 +44,7 @@ class PostPaymentUseCase:
         *,
         tenant_id: UUID,
         payment_id: UUID,
+        actor_id: UUID,
     ) -> Payment:
         async with self._unit_of_work:
             payment = await self._unit_of_work.payments.get_by_id_for_update(
@@ -119,6 +125,7 @@ class PostPaymentUseCase:
                 tenant_id=tenant_id,
                 purpose=LedgerAccountPurpose.CASH,
             )
+
             accounts_receivable = await self._get_ledger_account(
                 tenant_id=tenant_id,
                 purpose=LedgerAccountPurpose.ACCOUNTS_RECEIVABLE,
@@ -160,6 +167,28 @@ class PostPaymentUseCase:
             for invoice in invoices_to_mark_paid:
                 invoice.status = InvoiceStatus.PAID
                 invoice.paid_at = now
+
+            audit = RecordAuditLogUseCase(
+                audit_logs=self._unit_of_work.audit_logs,
+            )
+
+            await audit.execute(
+                AuditRecord(
+                    tenant_id=tenant_id,
+                    actor_type=AuditActorType.USER,
+                    actor_id=actor_id,
+                    action="payment.posted",
+                    resource_type="payment",
+                    resource_id=payment.id,
+                    outcome=AuditOutcome.SUCCESS,
+                    metadata={
+                        "payment_number": payment.payment_number,
+                        "amount": str(payment.amount),
+                        "currency": payment.currency,
+                    },
+                    occurred_at=now,
+                )
+            )
 
             await self._unit_of_work.commit()
 

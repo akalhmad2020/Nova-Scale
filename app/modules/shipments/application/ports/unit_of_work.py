@@ -1,6 +1,7 @@
 from types import TracebackType
 from typing import Protocol
 
+from app.modules.audit.application.ports.repositories import AuditLogRepository
 from app.modules.customers.application.ports.customer_repository import (
     CustomerRepository,
 )
@@ -22,6 +23,9 @@ class UnitOfWork(Protocol):
 
     @property
     def locations(self) -> LocationRepository: ...
+
+    @property
+    def audit_logs(self) -> AuditLogRepository: ...
 
     async def __aenter__(self) -> "UnitOfWork": ...
 

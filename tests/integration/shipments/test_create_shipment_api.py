@@ -1,4 +1,4 @@
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,6 +12,8 @@ from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
 from app.main import app
+from app.modules.audit.domain.enums import AuditActorType, AuditOutcome
+from app.modules.audit.infrastructure.models.audit_log import AuditLog
 from app.modules.customers.domain.enums import CustomerStatus
 from app.modules.customers.infrastructure.models.customer import Customer
 from app.modules.identity.domain.enums import (
@@ -72,6 +74,8 @@ async def cleanup_test_data(
             role_id = await session.scalar(select(Role.id).where(Role.name == role_name))
 
             if tenant_ids:
+                await session.execute(delete(AuditLog).where(AuditLog.tenant_id.in_(tenant_ids)))
+
                 await session.execute(delete(Shipment).where(Shipment.tenant_id.in_(tenant_ids)))
 
                 await session.execute(delete(Customer).where(Customer.tenant_id.in_(tenant_ids)))
@@ -115,7 +119,7 @@ async def create_shipment_context(
     tenant_slug: str,
     role_name: str,
     assign_permission: bool,
-) -> tuple[Tenant, Customer, Location, Location]:
+) -> tuple[Tenant, Customer, Location, Location, User]:
     settings = get_settings()
 
     engine = create_async_engine(
@@ -235,6 +239,7 @@ async def create_shipment_context(
                 customer,
                 origin,
                 destination,
+                user,
             )
 
     finally:
@@ -320,6 +325,44 @@ async def create_foreign_resources(
         await engine.dispose()
 
 
+async def get_shipment_audit_logs(
+    *,
+    tenant_id: UUID,
+    shipment_id: UUID | None = None,
+) -> list[AuditLog]:
+    settings = get_settings()
+
+    engine = create_async_engine(
+        settings.database_url,
+        poolclass=NullPool,
+    )
+
+    session_factory = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autoflush=False,
+    )
+
+    try:
+        async with session_factory() as session:
+            statement = select(AuditLog).where(
+                AuditLog.tenant_id == tenant_id,
+                AuditLog.action == "shipment.created",
+                AuditLog.resource_type == "shipment",
+            )
+
+            if shipment_id is not None:
+                statement = statement.where(AuditLog.resource_id == shipment_id)
+
+            result = await session.scalars(statement)
+
+            return list(result.all())
+
+    finally:
+        await engine.dispose()
+
+
 def login_and_get_access_token(
     *,
     email: str,
@@ -373,7 +416,13 @@ async def test_create_shipment_endpoint_creates_shipment() -> None:
     tenant_slug = f"shipment-tenant-{unique}"
     role_name = f"shipment-role-{unique}"
 
-    tenant, customer, origin, destination = await create_shipment_context(
+    (
+        tenant,
+        customer,
+        origin,
+        destination,
+        user,
+    ) = await create_shipment_context(
         email=email,
         password=password,
         tenant_slug=tenant_slug,
@@ -420,6 +469,35 @@ async def test_create_shipment_endpoint_creates_shipment() -> None:
         assert body["notes"] == "Handle carefully"
         assert body["id"]
 
+        shipment_id = UUID(body["id"])
+
+        audit_logs = await get_shipment_audit_logs(
+            tenant_id=tenant.id,
+            shipment_id=shipment_id,
+        )
+
+        assert len(audit_logs) == 1
+
+        audit_log = audit_logs[0]
+
+        assert audit_log.tenant_id == tenant.id
+        assert audit_log.actor_type == AuditActorType.USER
+        assert audit_log.actor_id == user.id
+        assert audit_log.action == "shipment.created"
+        assert audit_log.resource_type == "shipment"
+        assert audit_log.resource_id == shipment_id
+        assert audit_log.outcome == AuditOutcome.SUCCESS
+
+        assert audit_log.metadata_ == {
+            "tracking_number": "SHIP-001",
+            "customer_id": str(customer.id),
+            "origin_location_id": str(origin.id),
+            "destination_location_id": str(destination.id),
+            "service_type": "express",
+            "weight": "12.500",
+            "weight_unit": "kg",
+        }
+
     finally:
         await cleanup_test_data(
             email=email,
@@ -437,7 +515,13 @@ async def test_create_shipment_endpoint_requires_permission() -> None:
     tenant_slug = f"shipment-denied-tenant-{unique}"
     role_name = f"shipment-denied-role-{unique}"
 
-    tenant, customer, origin, destination = await create_shipment_context(
+    (
+        tenant,
+        customer,
+        origin,
+        destination,
+        _,
+    ) = await create_shipment_context(
         email=email,
         password=password,
         tenant_slug=tenant_slug,
@@ -468,6 +552,12 @@ async def test_create_shipment_endpoint_requires_permission() -> None:
         assert response.status_code == 403
         assert response.json() == {"detail": "Permission denied"}
 
+        audit_logs = await get_shipment_audit_logs(
+            tenant_id=tenant.id,
+        )
+
+        assert audit_logs == []
+
     finally:
         await cleanup_test_data(
             email=email,
@@ -485,7 +575,13 @@ async def test_create_shipment_endpoint_rejects_duplicate_tracking_number() -> N
     tenant_slug = f"shipment-duplicate-tenant-{unique}"
     role_name = f"shipment-duplicate-role-{unique}"
 
-    tenant, customer, origin, destination = await create_shipment_context(
+    (
+        tenant,
+        customer,
+        origin,
+        destination,
+        _,
+    ) = await create_shipment_context(
         email=email,
         password=password,
         tenant_slug=tenant_slug,
@@ -530,6 +626,16 @@ async def test_create_shipment_endpoint_rejects_duplicate_tracking_number() -> N
         assert second_response.status_code == 409
         assert second_response.json() == {"detail": "Shipment tracking number already exists"}
 
+        audit_logs = await get_shipment_audit_logs(
+            tenant_id=tenant.id,
+        )
+
+        assert len(audit_logs) == 1
+
+        assert audit_logs[0].resource_id is not None
+        assert audit_logs[0].resource_id == UUID(first_response.json()["id"])
+        assert audit_logs[0].action == "shipment.created"
+
     finally:
         await cleanup_test_data(
             email=email,
@@ -569,7 +675,13 @@ async def test_create_shipment_endpoint_enforces_resource_tenant_isolation(
     foreign_tenant_slug = f"shipment-foreign-tenant-{unique}"
     role_name = f"shipment-isolation-role-{unique}"
 
-    tenant, customer, origin, destination = await create_shipment_context(
+    (
+        tenant,
+        customer,
+        origin,
+        destination,
+        _,
+    ) = await create_shipment_context(
         email=email,
         password=password,
         tenant_slug=tenant_slug,
@@ -624,6 +736,12 @@ async def test_create_shipment_endpoint_enforces_resource_tenant_isolation(
             "detail": expected_detail,
         }
 
+        audit_logs = await get_shipment_audit_logs(
+            tenant_id=tenant.id,
+        )
+
+        assert audit_logs == []
+
     finally:
         await cleanup_test_data(
             email=email,
@@ -644,7 +762,13 @@ async def test_create_shipment_endpoint_rejects_invalid_weight() -> None:
     tenant_slug = f"shipment-weight-tenant-{unique}"
     role_name = f"shipment-weight-role-{unique}"
 
-    tenant, customer, origin, destination = await create_shipment_context(
+    (
+        tenant,
+        customer,
+        origin,
+        destination,
+        _,
+    ) = await create_shipment_context(
         email=email,
         password=password,
         tenant_slug=tenant_slug,
@@ -676,6 +800,12 @@ async def test_create_shipment_endpoint_rejects_invalid_weight() -> None:
             )
 
         assert response.status_code == 422
+
+        audit_logs = await get_shipment_audit_logs(
+            tenant_id=tenant.id,
+        )
+
+        assert audit_logs == []
 
     finally:
         await cleanup_test_data(

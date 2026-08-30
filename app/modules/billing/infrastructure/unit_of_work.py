@@ -2,6 +2,10 @@ from types import TracebackType
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.modules.audit.application.ports.repositories import AuditLogRepository
+from app.modules.audit.infrastructure.repositories.sqlalchemy import (
+    SQLAlchemyAuditLogRepository,
+)
 from app.modules.billing.application.ports.invoice_line_repository import (
     InvoiceLineRepository,
 )
@@ -56,6 +60,7 @@ class SQLAlchemyBillingUnitOfWork:
         self.journal_lines: JournalLineRepository
 
         self.outbox_messages: OutboxMessageRepository
+        self.audit_logs: AuditLogRepository
 
     async def __aenter__(self) -> "SQLAlchemyBillingUnitOfWork":
         self._session = self._session_factory()
@@ -77,6 +82,10 @@ class SQLAlchemyBillingUnitOfWork:
         )
 
         self.outbox_messages = SQLAlchemyOutboxMessageRepository(
+            self._session,
+        )
+
+        self.audit_logs = SQLAlchemyAuditLogRepository(
             self._session,
         )
 

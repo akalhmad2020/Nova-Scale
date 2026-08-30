@@ -1,5 +1,10 @@
 from uuid import UUID
 
+from app.modules.audit.application.contracts import AuditRecord
+from app.modules.audit.application.use_cases.record_audit_log import (
+    RecordAuditLogUseCase,
+)
+from app.modules.audit.domain.enums import AuditActorType, AuditOutcome
 from app.modules.payments.application.ports.unit_of_work import (
     PaymentsUnitOfWork,
 )
@@ -20,6 +25,7 @@ class VoidPaymentUseCase:
         *,
         tenant_id: UUID,
         payment_id: UUID,
+        actor_id: UUID,
     ) -> Payment:
         async with self._unit_of_work:
             payment = await self._unit_of_work.payments.get_by_id_for_update(
@@ -34,6 +40,27 @@ class VoidPaymentUseCase:
                 raise InvalidPaymentStateTransitionError
 
             payment.status = PaymentStatus.VOID
+
+            audit = RecordAuditLogUseCase(
+                audit_logs=self._unit_of_work.audit_logs,
+            )
+
+            await audit.execute(
+                AuditRecord(
+                    tenant_id=tenant_id,
+                    actor_type=AuditActorType.USER,
+                    actor_id=actor_id,
+                    action="payment.voided",
+                    resource_type="payment",
+                    resource_id=payment.id,
+                    outcome=AuditOutcome.SUCCESS,
+                    metadata={
+                        "payment_number": payment.payment_number,
+                        "amount": str(payment.amount),
+                        "currency": payment.currency,
+                    },
+                )
+            )
 
             await self._unit_of_work.commit()
             await self._unit_of_work.payments.refresh(payment)
