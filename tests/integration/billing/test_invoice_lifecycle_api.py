@@ -42,6 +42,9 @@ from app.modules.ledger.infrastructure.models import (
     JournalLine,
     LedgerAccount,
 )
+from app.shared.outbox.infrastructure.models.outbox_message import (
+    OutboxMessage,
+)
 
 
 async def cleanup_test_data(
@@ -89,6 +92,12 @@ async def cleanup_test_data(
             )
 
             if tenant_ids:
+                await session.execute(
+                    delete(OutboxMessage).where(
+                        OutboxMessage.tenant_id.in_(tenant_ids),
+                    )
+                )
+
                 await session.execute(
                     delete(JournalLine).where(
                         JournalLine.tenant_id.in_(tenant_ids),

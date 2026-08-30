@@ -29,6 +29,12 @@ from app.modules.ledger.domain.enums import (
     LedgerAccountStatus,
 )
 from app.modules.ledger.infrastructure.models import LedgerAccount
+from app.shared.outbox.domain.enums import OutboxMessageStatus
+from app.shared.outbox.infrastructure.models.outbox_message import (
+    OutboxMessage,
+)
+
+INVOICE_ISSUED_EVENT_TYPE = "invoice.issued"
 
 
 class IssueInvoiceUseCase:
@@ -133,6 +139,32 @@ class IssueInvoiceUseCase:
 
             invoice.status = InvoiceStatus.ISSUED
             invoice.issued_at = issued_at
+
+            outbox_message = OutboxMessage(
+                tenant_id=tenant_id,
+                event_type=INVOICE_ISSUED_EVENT_TYPE,
+                payload={
+                    "invoice_id": str(invoice.id),
+                    "customer_id": str(invoice.customer_id),
+                    "invoice_number": invoice.invoice_number,
+                    "currency": invoice.currency,
+                    "subtotal": str(invoice.subtotal),
+                    "tax_amount": str(invoice.tax_amount),
+                    "total_amount": str(invoice.total_amount),
+                    "issued_at": issued_at.isoformat(),
+                },
+                status=OutboxMessageStatus.PENDING.value,
+                attempt_count=0,
+                available_at=None,
+                claim_token=None,
+                lease_expires_at=None,
+                processed_at=None,
+                last_error=None,
+            )
+
+            await self._unit_of_work.outbox_messages.add(
+                outbox_message,
+            )
 
             await self._unit_of_work.commit()
             await self._unit_of_work.invoices.refresh(invoice)

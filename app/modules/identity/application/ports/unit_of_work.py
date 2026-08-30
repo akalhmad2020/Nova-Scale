@@ -23,6 +23,9 @@ from app.modules.identity.application.ports.tenant_repository import (
     TenantRepository,
 )
 from app.modules.identity.application.ports.user_repository import UserRepository
+from app.modules.ledger.application.ports.repositories import (
+    LedgerAccountRepository,
+)
 
 
 class UnitOfWork(Protocol):
@@ -64,3 +67,6 @@ class UnitOfWork(Protocol):
 
     @property
     def invitations(self) -> InvitationRepository: ...
+
+    @property
+    def ledger_accounts(self) -> LedgerAccountRepository: ...
