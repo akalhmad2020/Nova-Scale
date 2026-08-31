@@ -2,9 +2,6 @@ from app.core.database import SessionFactory
 from app.modules.shipments.application.use_cases.create_shipment import (
     CreateShipment,
 )
-from app.modules.shipments.application.use_cases.delete_shipment import (
-    DeleteShipment,
-)
 from app.modules.shipments.application.use_cases.get_shipment import (
     GetShipment,
 )
@@ -40,12 +37,6 @@ def get_list_shipments_use_case() -> ListShipments:
 
 def get_update_shipment_use_case() -> UpdateShipment:
     return UpdateShipment(
-        unit_of_work=SQLAlchemyUnitOfWork(SessionFactory),
-    )
-
-
-def get_delete_shipment_use_case() -> DeleteShipment:
-    return DeleteShipment(
         unit_of_work=SQLAlchemyUnitOfWork(SessionFactory),
     )
 

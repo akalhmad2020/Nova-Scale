@@ -23,4 +23,5 @@ class LedgerAccountStatus(StrEnum):
 
 class JournalSourceType(StrEnum):
     INVOICE_ISSUED = "invoice_issued"
+    INVOICE_VOIDED = "invoice_voided"
     PAYMENT_POSTED = "payment_posted"

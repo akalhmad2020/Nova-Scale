@@ -57,7 +57,7 @@ class JournalEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             ondelete="RESTRICT",
         ),
         CheckConstraint(
-            "source_type IN ('invoice_issued', 'payment_posted')",
+            "source_type IN ('invoice_issued', 'invoice_voided', 'payment_posted')",
             name="journal_source_type",
         ),
         CheckConstraint(

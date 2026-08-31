@@ -35,8 +35,49 @@ class RolePermissionRepository:
 
         return result.scalar_one_or_none() is not None
 
+    async def list_permission_codes(
+        self,
+        role_id: UUID,
+    ) -> set[str]:
+        statement = (
+            select(Permission.code)
+            .join(
+                RolePermission,
+                RolePermission.permission_id == Permission.id,
+            )
+            .where(
+                RolePermission.role_id == role_id,
+            )
+        )
+
+        result = await self._session.scalars(statement)
+
+        return set(result.all())
+
     def add(
         self,
         role_permission: RolePermission,
     ) -> None:
         self._session.add(role_permission)
+
+    async def remove_permission(
+        self,
+        role_id: UUID,
+        permission_code: str,
+    ) -> None:
+        statement = (
+            select(RolePermission)
+            .join(
+                Permission,
+                Permission.id == RolePermission.permission_id,
+            )
+            .where(
+                RolePermission.role_id == role_id,
+                Permission.code == permission_code,
+            )
+        )
+
+        role_permission = await self._session.scalar(statement)
+
+        if role_permission is not None:
+            await self._session.delete(role_permission)

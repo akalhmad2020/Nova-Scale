@@ -30,6 +30,10 @@ class InvalidInvoiceAmountError(BillingError):
     pass
 
 
+class InvoiceLedgerEntryNotFoundError(BillingError):
+    pass
+
+
 class CustomerNotFoundError(BillingError):
     pass
 

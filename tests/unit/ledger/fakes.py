@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from types import TracebackType
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from app.modules.ledger.application.ports import (
     JournalEntryRepository,
@@ -62,6 +62,7 @@ class FakeJournalEntryRepository:
         self.items: list[JournalEntry] = []
 
     async def add(self, entry: JournalEntry) -> None:
+        entry.id = uuid4()
         self.items.append(entry)
 
     async def get_by_id(
@@ -107,6 +108,7 @@ class FakeJournalLineRepository:
         self.items: list[JournalLine] = []
 
     async def add(self, line: JournalLine) -> None:
+        line.id = uuid4()
         self.items.append(line)
 
     async def list_by_entry(
@@ -117,7 +119,7 @@ class FakeJournalLineRepository:
         return [
             line
             for line in self.items
-            if line.tenant_id == tenant_id and line.journal_entry_id == journal_entry_id
+            if (line.tenant_id == tenant_id and line.journal_entry_id == journal_entry_id)
         ]
 
 
