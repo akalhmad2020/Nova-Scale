@@ -43,8 +43,10 @@ class OutboxWorker:
 
     async def run(self) -> None:
         logger.info(
-            "Outbox worker started. poll_interval_seconds=%s",
-            self._poll_interval_seconds,
+            "Outbox worker started",
+            extra={
+                "poll_interval_seconds": self._poll_interval_seconds,
+            },
         )
 
         while not self._stop_event.is_set():
@@ -55,8 +57,10 @@ class OutboxWorker:
 
                 if processed_count > 0:
                     logger.info(
-                        "Outbox batch processed. message_count=%s",
-                        processed_count,
+                        "Outbox batch processed",
+                        extra={
+                            "message_count": processed_count,
+                        },
                     )
 
             except asyncio.CancelledError:
@@ -96,6 +100,8 @@ async def run_worker() -> None:
 
     configure_logging(
         settings.log_level,
+        service="outbox-worker",
+        environment=settings.app_env,
     )
 
     processor = build_outbox_processing_service(

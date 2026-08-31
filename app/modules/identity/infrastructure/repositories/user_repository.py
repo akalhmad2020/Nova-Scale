@@ -42,3 +42,20 @@ class UserRepository:
 
     def add(self, user: User) -> None:
         self._session.add(user)
+
+    async def get_by_email_for_update(
+        self,
+        email: str,
+    ) -> User | None:
+        statement = (
+            select(User)
+            .where(
+                User.email == email,
+                User.deleted_at.is_(None),
+            )
+            .with_for_update()
+        )
+
+        result = await self._session.execute(statement)
+
+        return result.scalar_one_or_none()

@@ -1,0 +1,146 @@
+x-production-environment: &production-environment
+  APP_NAME: ${APP_NAME:-NovaScale API}
+  APP_ENV: production
+  DEBUG: "false"
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  API_V1_PREFIX: ${API_V1_PREFIX:-/api/v1}
+
+  DOCS_ENABLED: "false"
+  ALLOWED_HOSTS: '${ALLOWED_HOSTS:?ALLOWED_HOSTS is required}'
+  CORS_ALLOWED_ORIGINS: '${CORS_ALLOWED_ORIGINS:-[]}'
+  HSTS_ENABLED: "true"
+
+  DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+  DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
+  DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-20}
+  DB_POOL_TIMEOUT_SECONDS: ${DB_POOL_TIMEOUT_SECONDS:-30}
+  DB_POOL_RECYCLE_SECONDS: ${DB_POOL_RECYCLE_SECONDS:-1800}
+  DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-10}
+  DB_COMMAND_TIMEOUT_SECONDS: ${DB_COMMAND_TIMEOUT_SECONDS:-30}
+
+  AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?AUTH_JWT_SECRET is required}
+  AUTH_JWT_ALGORITHM: ${AUTH_JWT_ALGORITHM:-HS256}
+  ACCESS_TOKEN_TTL_MINUTES: ${ACCESS_TOKEN_TTL_MINUTES:-15}
+  REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-30}
+  JWT_ISSUER: ${JWT_ISSUER:-novascale}
+  JWT_AUDIENCE: ${JWT_AUDIENCE:-novascale-api}
+
+  LOGIN_MAX_FAILED_ATTEMPTS: ${LOGIN_MAX_FAILED_ATTEMPTS:-5}
+  LOGIN_LOCKOUT_MINUTES: ${LOGIN_LOCKOUT_MINUTES:-15}
+
+
+services:
+  postgres:
+    ports: !reset []
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+
+  migrate:
+    build:
+      context: .
+      target: production
+
+    command:
+      - alembic
+      - upgrade
+      - head
+
+    environment:
+      <<: *production-environment
+
+    volumes: !reset []
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    restart: "no"
+
+    healthcheck:
+      disable: true
+
+  backend:
+    build:
+      context: .
+      target: production
+
+    command:
+      - fastapi
+      - run
+      - app/main.py
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --proxy-headers
+      - --forwarded-allow-ips
+      - ${FORWARDED_ALLOW_IPS:?FORWARDED_ALLOW_IPS is required}
+
+    environment:
+      <<: *production-environment
+
+    ports: !reset []
+    volumes: !reset []
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  outbox-worker:
+    build:
+      context: .
+      target: production
+
+    environment:
+      <<: *production-environment
+
+      OUTBOX_WORKER_POLL_INTERVAL_SECONDS: ${OUTBOX_WORKER_POLL_INTERVAL_SECONDS:-2}
+      OUTBOX_WORKER_BATCH_SIZE: ${OUTBOX_WORKER_BATCH_SIZE:-50}
+      OUTBOX_WORKER_MAX_ATTEMPTS: ${OUTBOX_WORKER_MAX_ATTEMPTS:-5}
+      OUTBOX_WORKER_RETRY_BASE_SECONDS: ${OUTBOX_WORKER_RETRY_BASE_SECONDS:-30}
+      OUTBOX_WORKER_RETRY_MAX_SECONDS: ${OUTBOX_WORKER_RETRY_MAX_SECONDS:-900}
+      OUTBOX_WORKER_LEASE_SECONDS: ${OUTBOX_WORKER_LEASE_SECONDS:-300}
+
+    volumes: !reset []
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+    healthcheck:
+      disable: true
+
+  notification-worker:
+    profiles:
+      - notifications
+
+    build:
+      context: .
+      target: production
+
+    environment:
+      <<: *production-environment
+
+      NOTIFICATION_WORKER_POLL_INTERVAL_SECONDS: ${NOTIFICATION_WORKER_POLL_INTERVAL_SECONDS:-2}
+      NOTIFICATION_WORKER_BATCH_SIZE: ${NOTIFICATION_WORKER_BATCH_SIZE:-50}
+      NOTIFICATION_WORKER_MAX_ATTEMPTS: ${NOTIFICATION_WORKER_MAX_ATTEMPTS:-3}
+      NOTIFICATION_WORKER_RETRY_BASE_SECONDS: ${NOTIFICATION_WORKER_RETRY_BASE_SECONDS:-30}
+      NOTIFICATION_WORKER_RETRY_MAX_SECONDS: ${NOTIFICATION_WORKER_RETRY_MAX_SECONDS:-900}
+
+    volumes: !reset []
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+    healthcheck:
+      disable: true

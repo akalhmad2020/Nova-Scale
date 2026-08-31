@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from sqlalchemy.exc import IntegrityError
+
 from app.modules.identity.application.exceptions import (
     EmailAlreadyRegisteredError,
 )
@@ -43,7 +45,11 @@ class RegisterUser:
 
             uow.users.add(user)
 
-            await uow.flush()
+            try:
+                await uow.flush()
+            except IntegrityError as exc:
+                raise EmailAlreadyRegisteredError from exc
+
             await uow.commit()
 
             return user

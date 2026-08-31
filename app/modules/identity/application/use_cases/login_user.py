@@ -39,6 +39,8 @@ class LoginUser:
         refresh_token_service: RefreshTokenService,
         refresh_token_ttl_days: int,
         access_token_ttl_minutes: int,
+        max_failed_attempts: int,
+        lockout_minutes: int,
     ) -> None:
         self._unit_of_work = unit_of_work
         self._password_hasher = password_hasher
@@ -46,6 +48,8 @@ class LoginUser:
         self._refresh_token_service = refresh_token_service
         self._refresh_token_ttl_days = refresh_token_ttl_days
         self._access_token_ttl_minutes = access_token_ttl_minutes
+        self._max_failed_attempts = max_failed_attempts
+        self._lockout_minutes = lockout_minutes
 
     async def execute(
         self,
@@ -54,7 +58,7 @@ class LoginUser:
         email = command.email.strip().lower()
 
         async with self._unit_of_work as uow:
-            user = await uow.users.get_by_email(email)
+            user = await uow.users.get_by_email_for_update(email)
 
             if user is None:
                 raise InvalidCredentialsError
@@ -62,11 +66,35 @@ class LoginUser:
             if not user.is_active:
                 raise InactiveUserError
 
+            now = datetime.now(UTC)
+
+            if user.locked_until is not None and user.locked_until > now:
+                raise InvalidCredentialsError
+
+            if user.locked_until is not None:
+                user.failed_login_attempts = 0
+                user.locked_until = None
+
             if not self._password_hasher.verify(
                 command.password,
                 user.password_hash,
             ):
+                user.failed_login_attempts += 1
+
+                if user.failed_login_attempts >= self._max_failed_attempts:
+                    user.locked_until = now + timedelta(
+                        minutes=self._lockout_minutes,
+                    )
+
+                await uow.commit()
+
                 raise InvalidCredentialsError
+
+            user.failed_login_attempts = 0
+            user.locked_until = None
+
+            if self._password_hasher.needs_rehash(user.password_hash):
+                user.password_hash = self._password_hasher.hash(command.password)
 
             access_token = self._access_token_service.create(user.id)
 
@@ -76,7 +104,10 @@ class LoginUser:
             auth_session = AuthSession(
                 user_id=user.id,
                 refresh_token_hash=refresh_token_hash,
-                expires_at=datetime.now(UTC) + timedelta(days=self._refresh_token_ttl_days),
+                expires_at=now
+                + timedelta(
+                    days=self._refresh_token_ttl_days,
+                ),
             )
 
             uow.auth_sessions.add(auth_session)

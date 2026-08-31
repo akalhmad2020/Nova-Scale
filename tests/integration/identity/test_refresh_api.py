@@ -1,6 +1,8 @@
+import asyncio
 from typing import cast
 from uuid import uuid4
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import delete, select
@@ -283,3 +285,61 @@ def test_refresh_endpoint_validates_request() -> None:
         )
 
     assert response.status_code == 422
+
+
+@pytest.mark.integration
+async def test_concurrent_refresh_allows_only_one_request() -> None:
+    email = f"refresh-concurrent-{uuid4()}@example.com"
+    password = "very-secure-refresh-password"
+
+    await create_user(
+        email=email,
+        password=password,
+    )
+
+    try:
+        with TestClient(app) as sync_client:
+            login_body = login(
+                sync_client,
+                email=email,
+                password=password,
+            )
+
+        refresh_token = login_body["refresh_token"]
+
+        assert isinstance(refresh_token, str)
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://testserver",
+        ) as async_client:
+
+            async def refresh() -> httpx.Response:
+                return await async_client.post(
+                    "/api/v1/auth/refresh",
+                    json={
+                        "refresh_token": refresh_token,
+                    },
+                )
+
+            first_response, second_response = await asyncio.gather(
+                refresh(),
+                refresh(),
+            )
+
+        status_codes = sorted(
+            [
+                first_response.status_code,
+                second_response.status_code,
+            ]
+        )
+
+        assert status_codes == [200, 401]
+
+        failed_response = first_response if first_response.status_code == 401 else second_response
+
+        assert failed_response.json() == {"detail": "Invalid refresh token"}
+        assert failed_response.headers["www-authenticate"] == "Bearer"
+
+    finally:
+        await cleanup_user(email)

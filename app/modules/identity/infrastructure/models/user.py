@@ -1,4 +1,6 @@
-from sqlalchemy import Boolean, String, text
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, Integer, String, text
 from sqlalchemy.dialects.postgresql import CITEXT
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -43,4 +45,16 @@ class User(
         Boolean,
         nullable=False,
         server_default=text("true"),
+    )
+
+    failed_login_attempts: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("0"),
+    )
+
+    locked_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        default=None,
     )
