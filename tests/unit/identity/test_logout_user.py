@@ -109,3 +109,25 @@ async def test_logout_rejects_already_revoked_session() -> None:
 
     assert uow.committed is False
     assert uow.rolled_back is True
+
+
+async def test_logout_rejects_expired_session() -> None:
+    uow = FakeUnitOfWork()
+
+    auth_session = make_auth_session()
+    auth_session.expires_at = datetime.now(UTC) - timedelta(minutes=1)
+
+    uow.auth_sessions.add(auth_session)
+
+    use_case = make_use_case(uow)
+
+    with pytest.raises(InvalidRefreshTokenError):
+        await use_case.execute(
+            LogoutUserCommand(
+                refresh_token="refresh-token",
+            )
+        )
+
+    assert auth_session.revoked_at is None
+    assert uow.committed is False
+    assert uow.rolled_back is True

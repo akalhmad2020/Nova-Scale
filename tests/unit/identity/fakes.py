@@ -35,6 +35,12 @@ class FakeUserRepository:
             None,
         )
 
+    async def get_by_email_for_update(
+        self,
+        email: str,
+    ) -> User | None:
+        return await self.get_by_email(email)
+
     async def email_exists(self, email: str) -> bool:
         return await self.get_by_email(email) is not None
 

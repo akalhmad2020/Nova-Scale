@@ -87,6 +87,8 @@ async def test_login_user_creates_real_tokens_and_auth_session() -> None:
             refresh_token_service=refresh_token_service,
             refresh_token_ttl_days=settings.refresh_token_ttl_days,
             access_token_ttl_minutes=settings.access_token_ttl_minutes,
+            max_failed_attempts=5,
+            lockout_minutes=15,
         )
 
         result = await use_case.execute(

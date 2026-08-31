@@ -1,3 +1,6 @@
+import asyncio
+
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import delete
@@ -125,3 +128,50 @@ async def test_register_endpoint_validates_input() -> None:
         )
 
     assert response.status_code == 422
+
+
+@pytest.mark.integration
+async def test_concurrent_registration_allows_only_one_user() -> None:
+    email = "api-concurrent-register@example.com"
+
+    await _delete_user_by_email(email)
+
+    payload = {
+        "email": email,
+        "password": "very-secure-password",
+        "first_name": "Concurrent",
+        "last_name": "User",
+    }
+
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://testserver",
+        ) as client:
+
+            async def register() -> httpx.Response:
+                return await client.post(
+                    "/api/v1/auth/register",
+                    json=payload,
+                )
+
+            first_response, second_response = await asyncio.gather(
+                register(),
+                register(),
+            )
+
+        status_codes = sorted(
+            [
+                first_response.status_code,
+                second_response.status_code,
+            ]
+        )
+
+        assert status_codes == [201, 409]
+
+        conflict_response = first_response if first_response.status_code == 409 else second_response
+
+        assert conflict_response.json() == {"detail": "Email is already registered"}
+
+    finally:
+        await _delete_user_by_email(email)

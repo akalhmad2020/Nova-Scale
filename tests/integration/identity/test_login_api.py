@@ -189,3 +189,44 @@ async def test_login_endpoint_rejects_inactive_user() -> None:
 
     finally:
         await _cleanup_user(email)
+
+
+@pytest.mark.integration
+async def test_login_endpoint_hides_account_lockout_state() -> None:
+    email = "locked-login@example.com"
+    password = "correct-password"
+
+    await _cleanup_user(email)
+    await _create_user(
+        email=email,
+        password=password,
+    )
+
+    try:
+        with TestClient(app) as client:
+            for _ in range(5):
+                failed_response = client.post(
+                    "/api/v1/auth/login",
+                    json={
+                        "email": email,
+                        "password": "wrong-password",
+                    },
+                )
+
+                assert failed_response.status_code == 401
+                assert failed_response.json() == {"detail": "Invalid email or password"}
+
+            locked_response = client.post(
+                "/api/v1/auth/login",
+                json={
+                    "email": email,
+                    "password": password,
+                },
+            )
+
+        assert locked_response.status_code == 401
+        assert locked_response.json() == {"detail": "Invalid email or password"}
+        assert locked_response.headers["www-authenticate"] == "Bearer"
+
+    finally:
+        await _cleanup_user(email)

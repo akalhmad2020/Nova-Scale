@@ -38,10 +38,15 @@ class LogoutUser:
             if auth_session is None:
                 raise InvalidRefreshTokenError
 
+            now = datetime.now(UTC)
+
             if auth_session.revoked_at is not None:
                 raise InvalidRefreshTokenError
 
-            auth_session.revoked_at = datetime.now(UTC)
+            if auth_session.expires_at <= now:
+                raise InvalidRefreshTokenError
+
+            auth_session.revoked_at = now
 
             await uow.flush()
             await uow.commit()

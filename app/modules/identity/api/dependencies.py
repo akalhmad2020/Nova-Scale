@@ -116,6 +116,8 @@ def get_login_user_use_case() -> LoginUser:
         refresh_token_service=refresh_token_service,
         refresh_token_ttl_days=settings.refresh_token_ttl_days,
         access_token_ttl_minutes=settings.access_token_ttl_minutes,
+        max_failed_attempts=settings.login_max_failed_attempts,
+        lockout_minutes=settings.login_lockout_minutes,
     )
 
 

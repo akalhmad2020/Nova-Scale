@@ -49,8 +49,10 @@ class NotificationWorker:
 
     async def run(self) -> None:
         logger.info(
-            "Notification worker started. poll_interval_seconds=%s",
-            self._poll_interval_seconds,
+            "Notification worker started",
+            extra={
+                "poll_interval_seconds": self._poll_interval_seconds,
+            },
         )
 
         while not self._stop_event.is_set():
@@ -59,15 +61,14 @@ class NotificationWorker:
 
                 if result.discovered > 0:
                     logger.info(
-                        "Notification batch processed. "
-                        "discovered=%s delivered=%s "
-                        "retryable_failures=%s skipped=%s "
-                        "unexpected_failures=%s",
-                        result.discovered,
-                        result.delivered,
-                        result.retryable_failures,
-                        result.skipped,
-                        result.unexpected_failures,
+                        "Notification batch processed",
+                        extra={
+                            "discovered": result.discovered,
+                            "delivered": result.delivered,
+                            "retryable_failures": result.retryable_failures,
+                            "skipped": result.skipped,
+                            "unexpected_failures": result.unexpected_failures,
+                        },
                     )
 
             except asyncio.CancelledError:
@@ -105,7 +106,11 @@ def install_signal_handlers(
 async def run_worker() -> None:
     settings = get_settings()
 
-    configure_logging(settings.log_level)
+    configure_logging(
+        settings.log_level,
+        service="notification-worker",
+        environment=settings.app_env,
+    )
 
     provider_registry = build_notification_provider_registry(
         app_env=settings.app_env,
@@ -116,13 +121,13 @@ async def run_worker() -> None:
         provider_resolver=provider_registry,
         batch_size=settings.notification_worker_batch_size,
         max_attempts=settings.notification_worker_max_attempts,
-        retry_base_seconds=(settings.notification_worker_retry_base_seconds),
-        retry_max_seconds=(settings.notification_worker_retry_max_seconds),
+        retry_base_seconds=settings.notification_worker_retry_base_seconds,
+        retry_max_seconds=settings.notification_worker_retry_max_seconds,
     )
 
     worker = NotificationWorker(
         processor=processor,
-        poll_interval_seconds=(settings.notification_worker_poll_interval_seconds),
+        poll_interval_seconds=settings.notification_worker_poll_interval_seconds,
     )
 
     install_signal_handlers(worker)

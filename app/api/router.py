@@ -20,77 +20,29 @@ from app.modules.shipment_events.api.routes import (
 )
 from app.modules.shipments.api.routes import router as shipments_router
 
-api_router = APIRouter()
 
-api_router.include_router(health_router)
+def create_api_router(api_v1_prefix: str) -> APIRouter:
+    router = APIRouter()
 
-api_router.include_router(
-    identity_router,
-    prefix="/api/v1",
-)
+    router.include_router(health_router)
 
-api_router.include_router(
-    tenant_router,
-    prefix="/api/v1",
-)
+    versioned_router = APIRouter(prefix=api_v1_prefix)
 
-api_router.include_router(
-    invitation_router,
-    prefix="/api/v1",
-)
+    versioned_router.include_router(identity_router)
+    versioned_router.include_router(tenant_router)
+    versioned_router.include_router(invitation_router)
+    versioned_router.include_router(customers_router)
+    versioned_router.include_router(locations_router)
+    versioned_router.include_router(shipments_router)
+    versioned_router.include_router(packages_router)
+    versioned_router.include_router(shipment_events_router)
+    versioned_router.include_router(rates_router)
+    versioned_router.include_router(pricing_router)
+    versioned_router.include_router(carriers_router)
+    versioned_router.include_router(documents_router)
+    versioned_router.include_router(billing_router)
+    versioned_router.include_router(payments_router)
 
-api_router.include_router(
-    customers_router,
-    prefix="/api/v1",
-)
+    router.include_router(versioned_router)
 
-api_router.include_router(
-    locations_router,
-    prefix="/api/v1",
-)
-
-api_router.include_router(
-    shipments_router,
-    prefix="/api/v1",
-)
-
-api_router.include_router(
-    packages_router,
-    prefix="/api/v1",
-)
-
-api_router.include_router(
-    shipment_events_router,
-    prefix="/api/v1",
-)
-
-api_router.include_router(
-    rates_router,
-    prefix="/api/v1",
-)
-
-api_router.include_router(
-    pricing_router,
-    prefix="/api/v1",
-)
-
-api_router.include_router(
-    carriers_router,
-    prefix="/api/v1",
-)
-
-api_router.include_router(
-    documents_router,
-    prefix="/api/v1",
-)
-
-
-api_router.include_router(
-    billing_router,
-    prefix="/api/v1",
-)
-
-api_router.include_router(
-    payments_router,
-    prefix="/api/v1",
-)
+    return router
