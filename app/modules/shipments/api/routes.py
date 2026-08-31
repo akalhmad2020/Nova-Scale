@@ -1,14 +1,13 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.modules.identity.api.auth_dependencies import require_permission
 from app.modules.identity.domain.permissions import Permissions
 from app.modules.identity.infrastructure.models.membership import Membership
 from app.modules.shipments.api.dependencies import (
     get_create_shipment_use_case,
-    get_delete_shipment_use_case,
     get_get_shipment_use_case,
     get_list_shipments_use_case,
     get_transition_shipment_status_use_case,
@@ -31,10 +30,6 @@ from app.modules.shipments.application.exceptions import (
 from app.modules.shipments.application.use_cases.create_shipment import (
     CreateShipment,
     CreateShipmentCommand,
-)
-from app.modules.shipments.application.use_cases.delete_shipment import (
-    DeleteShipment,
-    DeleteShipmentCommand,
 )
 from app.modules.shipments.application.use_cases.get_shipment import (
     GetShipment,
@@ -264,46 +259,6 @@ async def update_shipment(
         ) from exc
 
     return ShipmentResponse.model_validate(shipment)
-
-
-@router.delete(
-    "/{shipment_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-)
-async def delete_shipment(
-    tenant_id: UUID,
-    shipment_id: UUID,
-    membership: Annotated[
-        Membership,
-        Depends(
-            require_permission(
-                Permissions.SHIPMENT_DELETE,
-            )
-        ),
-    ],
-    use_case: Annotated[
-        DeleteShipment,
-        Depends(get_delete_shipment_use_case),
-    ],
-) -> Response:
-    try:
-        await use_case.execute(
-            DeleteShipmentCommand(
-                tenant_id=tenant_id,
-                actor_id=membership.user_id,
-                shipment_id=shipment_id,
-            )
-        )
-
-    except ShipmentNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Shipment not found",
-        ) from exc
-
-    return Response(
-        status_code=status.HTTP_204_NO_CONTENT,
-    )
 
 
 @router.post(

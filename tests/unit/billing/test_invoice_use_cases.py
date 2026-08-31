@@ -9,6 +9,7 @@ from app.modules.billing.application.exceptions import (
     InvalidInvoiceAmountError,
     InvalidInvoiceStateTransitionError,
     InvoiceHasNoLinesError,
+    InvoiceLedgerEntryNotFoundError,
     InvoiceLineNotFoundError,
     InvoiceNotEditableError,
     InvoiceNotFoundError,
@@ -38,6 +39,7 @@ from app.modules.billing.application.use_cases.void_invoice import (
 )
 from app.modules.billing.domain.enums import InvoiceStatus
 from app.modules.ledger.domain.enums import (
+    JournalSourceType,
     LedgerAccountPurpose,
     LedgerAccountStatus,
     LedgerAccountType,
@@ -703,6 +705,9 @@ async def test_draft_invoice_can_be_voided() -> None:
 
     assert result.status == InvoiceStatus.VOID
 
+    assert len(unit_of_work.fake_journal_entries.items) == 0
+    assert len(unit_of_work.fake_journal_lines.items) == 0
+
     assert len(unit_of_work.fake_audit_logs.items) == 1
 
     audit_log = unit_of_work.fake_audit_logs.items[0]
@@ -723,9 +728,233 @@ async def test_draft_invoice_can_be_voided() -> None:
         "subtotal": "0.00",
         "tax_amount": "0.00",
         "total_amount": "0.00",
+        "previous_status": InvoiceStatus.DRAFT.value,
     }
 
     assert unit_of_work.committed is True
+
+
+@pytest.mark.asyncio
+async def test_issued_invoice_void_creates_reversal_journal() -> None:
+    tenant_id = uuid4()
+    issue_actor_id = uuid4()
+    void_actor_id = uuid4()
+
+    unit_of_work = FakeBillingUnitOfWork()
+
+    add_invoice_ledger_accounts(
+        unit_of_work,
+        tenant_id=tenant_id,
+    )
+
+    create_invoice = CreateInvoiceUseCase(unit_of_work)
+    add_line = AddInvoiceLineUseCase(unit_of_work)
+    issue_invoice = IssueInvoiceUseCase(unit_of_work)
+    void_invoice = VoidInvoiceUseCase(unit_of_work)
+
+    invoice = await create_invoice.execute(
+        tenant_id=tenant_id,
+        customer_id=add_customer(
+            unit_of_work,
+            tenant_id=tenant_id,
+        ),
+        invoice_number="INV-0001",
+        currency="USD",
+    )
+
+    await add_line.execute(
+        tenant_id=tenant_id,
+        invoice_id=invoice.id,
+        description="Shipping service",
+        quantity=Decimal("1.0000"),
+        unit_price=Decimal("25.00"),
+    )
+
+    await issue_invoice.execute(
+        tenant_id=tenant_id,
+        invoice_id=invoice.id,
+        actor_id=issue_actor_id,
+    )
+
+    issued_journal = await unit_of_work.fake_journal_entries.get_by_source(
+        tenant_id,
+        JournalSourceType.INVOICE_ISSUED.value,
+        invoice.id,
+    )
+
+    assert issued_journal is not None
+
+    issued_lines = await unit_of_work.fake_journal_lines.list_by_entry(
+        tenant_id,
+        issued_journal.id,
+    )
+
+    assert len(issued_lines) == 2
+
+    unit_of_work.committed = False
+
+    result = await void_invoice.execute(
+        tenant_id=tenant_id,
+        invoice_id=invoice.id,
+        actor_id=void_actor_id,
+    )
+
+    assert result.status == InvoiceStatus.VOID
+    assert unit_of_work.committed is True
+
+    reversal_journal = await unit_of_work.fake_journal_entries.get_by_source(
+        tenant_id,
+        JournalSourceType.INVOICE_VOIDED.value,
+        invoice.id,
+    )
+
+    assert reversal_journal is not None
+    assert reversal_journal.source_id == invoice.id
+    assert reversal_journal.description == "Invoice INV-0001 voided"
+
+    reversal_lines = await unit_of_work.fake_journal_lines.list_by_entry(
+        tenant_id,
+        reversal_journal.id,
+    )
+
+    assert len(reversal_lines) == len(issued_lines)
+
+    for issued_line, reversal_line in zip(
+        issued_lines,
+        reversal_lines,
+        strict=True,
+    ):
+        assert reversal_line.ledger_account_id == issued_line.ledger_account_id
+        assert reversal_line.debit == issued_line.credit
+        assert reversal_line.credit == issued_line.debit
+
+    void_audit_logs = [
+        audit_log
+        for audit_log in unit_of_work.fake_audit_logs.items
+        if audit_log.action == "invoice.voided"
+    ]
+
+    assert len(void_audit_logs) == 1
+
+    void_audit_log = void_audit_logs[0]
+
+    assert void_audit_log.tenant_id == tenant_id
+    assert void_audit_log.actor_type == AuditActorType.USER
+    assert void_audit_log.actor_id == void_actor_id
+    assert void_audit_log.resource_type == "invoice"
+    assert void_audit_log.resource_id == invoice.id
+    assert void_audit_log.outcome == AuditOutcome.SUCCESS
+    assert void_audit_log.metadata_["previous_status"] == InvoiceStatus.ISSUED.value
+
+
+@pytest.mark.asyncio
+async def test_issued_invoice_cannot_be_voided_without_issued_journal() -> None:
+    tenant_id = uuid4()
+    actor_id = uuid4()
+
+    unit_of_work = FakeBillingUnitOfWork()
+
+    create_invoice = CreateInvoiceUseCase(unit_of_work)
+    void_invoice = VoidInvoiceUseCase(unit_of_work)
+
+    invoice = await create_invoice.execute(
+        tenant_id=tenant_id,
+        customer_id=add_customer(
+            unit_of_work,
+            tenant_id=tenant_id,
+        ),
+        invoice_number="INV-0001",
+        currency="USD",
+    )
+
+    invoice.status = InvoiceStatus.ISSUED
+
+    unit_of_work.committed = False
+
+    with pytest.raises(InvoiceLedgerEntryNotFoundError):
+        await void_invoice.execute(
+            tenant_id=tenant_id,
+            invoice_id=invoice.id,
+            actor_id=actor_id,
+        )
+
+    assert invoice.status == InvoiceStatus.ISSUED
+    assert unit_of_work.committed is False
+    assert unit_of_work.rolled_back is True
+
+    assert not any(
+        audit_log.action == "invoice.voided" for audit_log in unit_of_work.fake_audit_logs.items
+    )
+
+    assert not any(
+        entry.source_type == JournalSourceType.INVOICE_VOIDED.value
+        for entry in unit_of_work.fake_journal_entries.items
+    )
+
+
+@pytest.mark.asyncio
+async def test_issued_invoice_can_be_reversed_with_inactive_historical_accounts() -> None:
+    tenant_id = uuid4()
+    issue_actor_id = uuid4()
+    void_actor_id = uuid4()
+
+    unit_of_work = FakeBillingUnitOfWork()
+
+    add_invoice_ledger_accounts(
+        unit_of_work,
+        tenant_id=tenant_id,
+    )
+
+    create_invoice = CreateInvoiceUseCase(unit_of_work)
+    add_line = AddInvoiceLineUseCase(unit_of_work)
+    issue_invoice = IssueInvoiceUseCase(unit_of_work)
+    void_invoice = VoidInvoiceUseCase(unit_of_work)
+
+    invoice = await create_invoice.execute(
+        tenant_id=tenant_id,
+        customer_id=add_customer(
+            unit_of_work,
+            tenant_id=tenant_id,
+        ),
+        invoice_number="INV-0001",
+        currency="USD",
+    )
+
+    await add_line.execute(
+        tenant_id=tenant_id,
+        invoice_id=invoice.id,
+        description="Shipping service",
+        quantity=Decimal("1.0000"),
+        unit_price=Decimal("25.00"),
+    )
+
+    await issue_invoice.execute(
+        tenant_id=tenant_id,
+        invoice_id=invoice.id,
+        actor_id=issue_actor_id,
+    )
+
+    for account in unit_of_work.fake_ledger_accounts.items:
+        account.status = LedgerAccountStatus.INACTIVE.value
+
+    unit_of_work.committed = False
+
+    result = await void_invoice.execute(
+        tenant_id=tenant_id,
+        invoice_id=invoice.id,
+        actor_id=void_actor_id,
+    )
+
+    assert result.status == InvoiceStatus.VOID
+    assert unit_of_work.committed is True
+
+    reversal_journal = await unit_of_work.fake_journal_entries.get_by_source(
+        tenant_id,
+        JournalSourceType.INVOICE_VOIDED.value,
+        invoice.id,
+    )
+
+    assert reversal_journal is not None
 
 
 @pytest.mark.asyncio

@@ -15,8 +15,14 @@ from app.modules.ledger.application.ports.repositories import (
     LedgerAccountRepository,
 )
 from app.modules.ledger.domain.enums import LedgerAccountStatus
-from app.modules.ledger.domain.rules import JournalAmount, validate_balanced_journal
-from app.modules.ledger.infrastructure.models import JournalEntry, JournalLine
+from app.modules.ledger.domain.rules import (
+    JournalAmount,
+    validate_balanced_journal,
+)
+from app.modules.ledger.infrastructure.models import (
+    JournalEntry,
+    JournalLine,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +54,7 @@ class JournalPostingService:
         description: str,
         posted_at: datetime,
         lines: list[JournalLineInput],
+        allow_inactive_accounts: bool = False,
     ) -> JournalEntry:
         validate_balanced_journal(
             JournalAmount(
@@ -75,7 +82,7 @@ class JournalPostingService:
             if account is None:
                 raise LedgerAccountNotFoundError
 
-            if account.status != LedgerAccountStatus.ACTIVE.value:
+            if account.status != LedgerAccountStatus.ACTIVE.value and not allow_inactive_accounts:
                 raise LedgerAccountInactiveError
 
         entry = JournalEntry(

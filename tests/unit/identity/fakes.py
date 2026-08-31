@@ -1,5 +1,5 @@
 from types import TracebackType
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from app.modules.identity.domain.enums import InvitationStatus
 from app.modules.identity.infrastructure.models.auth_session import AuthSession
@@ -192,6 +192,7 @@ class FakeRoleRepository:
         )
 
     def add(self, role: Role) -> None:
+        role.id = uuid4()
         self.roles.append(role)
 
 
@@ -218,6 +219,7 @@ class FakePermissionRepository:
         )
 
     def add(self, permission: Permission) -> None:
+        permission.id = uuid4()
         self.permissions.append(permission)
 
 
@@ -243,6 +245,42 @@ class FakeRolePermissionRepository:
             role_permission.role_id == role_id and role_permission.permission_id == permission.id
             for role_permission in self.role_permissions
         )
+
+    async def list_permission_codes(
+        self,
+        role_id: UUID,
+    ) -> set[str]:
+        permission_ids = {
+            role_permission.permission_id
+            for role_permission in self.role_permissions
+            if role_permission.role_id == role_id
+        }
+
+        return {
+            permission.code for permission in self.permissions if permission.id in permission_ids
+        }
+
+    async def remove_permission(
+        self,
+        role_id: UUID,
+        permission_code: str,
+    ) -> None:
+        permission = next(
+            (permission for permission in self.permissions if permission.code == permission_code),
+            None,
+        )
+
+        if permission is None:
+            return
+
+        self.role_permissions = [
+            role_permission
+            for role_permission in self.role_permissions
+            if not (
+                role_permission.role_id == role_id
+                and role_permission.permission_id == permission.id
+            )
+        ]
 
     def add(
         self,

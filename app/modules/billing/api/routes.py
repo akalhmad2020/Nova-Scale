@@ -23,6 +23,7 @@ from app.modules.billing.application.exceptions import (
     InvalidInvoiceAmountError,
     InvalidInvoiceStateTransitionError,
     InvoiceHasNoLinesError,
+    InvoiceLedgerEntryNotFoundError,
     InvoiceLineNotFoundError,
     InvoiceNotEditableError,
     InvoiceNotFoundError,
@@ -279,7 +280,6 @@ async def issue_invoice(
         Depends(get_issue_invoice_use_case),
     ],
 ) -> InvoiceResponse:
-
     try:
         invoice = await use_case.execute(
             tenant_id=tenant_id,
@@ -346,6 +346,11 @@ async def void_invoice(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Invalid invoice state transition",
+        ) from exc
+    except InvoiceLedgerEntryNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Issued invoice ledger entry is inconsistent",
         ) from exc
 
     return InvoiceResponse.model_validate(invoice)

@@ -18,7 +18,9 @@ class BootstrapAuthorization:
     async def execute(self) -> None:
         async with self._unit_of_work as uow:
             for definition in PERMISSION_CATALOG:
-                permission = await uow.permissions.get_by_code(definition.code)
+                permission = await uow.permissions.get_by_code(
+                    definition.code,
+                )
 
                 if permission is None:
                     uow.permissions.add(
@@ -31,7 +33,9 @@ class BootstrapAuthorization:
             await uow.flush()
 
             for role_definition in DEFAULT_ROLES:
-                role = await uow.roles.get_by_name(role_definition.name)
+                role = await uow.roles.get_by_name(
+                    role_definition.name,
+                )
 
                 if role is None:
                     role = Role(
@@ -42,23 +46,37 @@ class BootstrapAuthorization:
                     uow.roles.add(role)
                     await uow.flush()
 
-                for permission_code in role_definition.permissions:
-                    permission = await uow.permissions.get_by_code(permission_code)
+                desired_permission_codes = set(
+                    role_definition.permissions,
+                )
+
+                current_permission_codes = await uow.role_permissions.list_permission_codes(
+                    role.id,
+                )
+
+                missing_permission_codes = desired_permission_codes - current_permission_codes
+
+                obsolete_permission_codes = current_permission_codes - desired_permission_codes
+
+                for permission_code in missing_permission_codes:
+                    permission = await uow.permissions.get_by_code(
+                        permission_code,
+                    )
 
                     if permission is None:
                         continue
 
-                    already_assigned = await uow.role_permissions.has_permission(
+                    uow.role_permissions.add(
+                        RolePermission(
+                            role_id=role.id,
+                            permission_id=permission.id,
+                        )
+                    )
+
+                for permission_code in obsolete_permission_codes:
+                    await uow.role_permissions.remove_permission(
                         role.id,
                         permission_code,
                     )
-
-                    if not already_assigned:
-                        uow.role_permissions.add(
-                            RolePermission(
-                                role_id=role.id,
-                                permission_id=permission.id,
-                            )
-                        )
 
             await uow.commit()

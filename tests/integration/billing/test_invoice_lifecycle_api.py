@@ -371,6 +371,7 @@ async def get_invoice_journal(
     *,
     tenant_id: UUID,
     invoice_id: UUID,
+    source_type: JournalSourceType = JournalSourceType.INVOICE_ISSUED,
 ) -> tuple[JournalEntry | None, list[JournalLine]]:
     settings = get_settings()
 
@@ -391,7 +392,7 @@ async def get_invoice_journal(
             entry = await session.scalar(
                 select(JournalEntry).where(
                     JournalEntry.tenant_id == tenant_id,
-                    JournalEntry.source_type == JournalSourceType.INVOICE_ISSUED.value,
+                    JournalEntry.source_type == source_type.value,
                     JournalEntry.source_id == invoice_id,
                 )
             )
@@ -413,6 +414,51 @@ async def get_invoice_journal(
             )
 
             return entry, lines
+
+    finally:
+        await engine.dispose()
+
+
+async def delete_invoice_journal_lines(
+    *,
+    tenant_id: UUID,
+    invoice_id: UUID,
+    source_type: JournalSourceType,
+) -> None:
+    settings = get_settings()
+
+    engine = create_async_engine(
+        settings.database_url,
+        poolclass=NullPool,
+    )
+
+    session_factory = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autoflush=False,
+    )
+
+    try:
+        async with session_factory() as session:
+            entry = await session.scalar(
+                select(JournalEntry).where(
+                    JournalEntry.tenant_id == tenant_id,
+                    JournalEntry.source_type == source_type.value,
+                    JournalEntry.source_id == invoice_id,
+                )
+            )
+
+            assert entry is not None
+
+            await session.execute(
+                delete(JournalLine).where(
+                    JournalLine.tenant_id == tenant_id,
+                    JournalLine.journal_entry_id == entry.id,
+                )
+            )
+
+            await session.commit()
 
     finally:
         await engine.dispose()
@@ -923,14 +969,17 @@ async def test_void_invoice_endpoint_voids_allowed_invoice(
         password=password,
         tenant_slug=tenant_slug,
         role_name=role_name,
-        permission_codes=(Permissions.INVOICE_VOID,),
+        permission_codes=(
+            Permissions.INVOICE_ISSUE,
+            Permissions.INVOICE_VOID,
+        ),
     )
 
     invoice = await create_invoice(
         tenant_id=tenant.id,
         customer_id=customer.id,
         invoice_number=f"INV-VOID-{initial_status.value}",
-        status=initial_status,
+        status=InvoiceStatus.DRAFT,
         with_line=True,
     )
 
@@ -939,6 +988,34 @@ async def test_void_invoice_endpoint_voids_allowed_invoice(
             email=email,
             password=password,
         )
+
+        issued_entry: JournalEntry | None = None
+        issued_lines: list[JournalLine] = []
+
+        if initial_status == InvoiceStatus.ISSUED:
+            await create_ledger_system_accounts(
+                tenant_id=tenant.id,
+            )
+
+            with TestClient(app) as client:
+                issue_response = client.post(
+                    f"/api/v1/tenants/{tenant.id}/invoices/{invoice.id}/issue",
+                    headers={
+                        "Authorization": f"Bearer {access_token}",
+                    },
+                )
+
+            assert issue_response.status_code == 200
+            assert issue_response.json()["status"] == InvoiceStatus.ISSUED.value
+
+            issued_entry, issued_lines = await get_invoice_journal(
+                tenant_id=tenant.id,
+                invoice_id=invoice.id,
+                source_type=JournalSourceType.INVOICE_ISSUED,
+            )
+
+            assert issued_entry is not None
+            assert issued_lines
 
         with TestClient(app) as client:
             response = client.post(
@@ -949,13 +1026,71 @@ async def test_void_invoice_endpoint_voids_allowed_invoice(
             )
 
         assert response.status_code == 200
-        assert response.json()["status"] == "void"
+        assert response.json()["status"] == InvoiceStatus.VOID.value
 
         persisted_invoice = await get_invoice(
             invoice_id=invoice.id,
         )
 
         assert persisted_invoice.status == InvoiceStatus.VOID
+
+        reversal_entry, reversal_lines = await get_invoice_journal(
+            tenant_id=tenant.id,
+            invoice_id=invoice.id,
+            source_type=JournalSourceType.INVOICE_VOIDED,
+        )
+
+        if initial_status == InvoiceStatus.DRAFT:
+            assert reversal_entry is None
+            assert reversal_lines == []
+
+        else:
+            assert issued_entry is not None
+            assert reversal_entry is not None
+
+            assert issued_entry.source_type == JournalSourceType.INVOICE_ISSUED.value
+            assert reversal_entry.source_type == JournalSourceType.INVOICE_VOIDED.value
+
+            assert issued_entry.source_id == invoice.id
+            assert reversal_entry.source_id == invoice.id
+
+            assert len(issued_lines) == 3
+            assert len(reversal_lines) == len(issued_lines)
+
+            issued_by_account = {line.ledger_account_id: line for line in issued_lines}
+            reversal_by_account = {line.ledger_account_id: line for line in reversal_lines}
+
+            assert reversal_by_account.keys() == issued_by_account.keys()
+
+            for account_id, issued_line in issued_by_account.items():
+                reversal_line = reversal_by_account[account_id]
+
+                assert reversal_line.debit == issued_line.credit
+                assert reversal_line.credit == issued_line.debit
+
+            issued_debits = sum(
+                (line.debit for line in issued_lines),
+                start=Decimal("0.00"),
+            )
+            issued_credits = sum(
+                (line.credit for line in issued_lines),
+                start=Decimal("0.00"),
+            )
+
+            reversal_debits = sum(
+                (line.debit for line in reversal_lines),
+                start=Decimal("0.00"),
+            )
+            reversal_credits = sum(
+                (line.credit for line in reversal_lines),
+                start=Decimal("0.00"),
+            )
+
+            assert issued_debits == issued_credits
+            assert reversal_debits == reversal_credits
+
+            assert issued_debits == reversal_credits
+            assert issued_credits == reversal_debits
 
         settings = get_settings()
 
@@ -1008,6 +1143,7 @@ async def test_void_invoice_endpoint_voids_allowed_invoice(
             "subtotal": "25.00",
             "tax_amount": "5.00",
             "total_amount": "30.00",
+            "previous_status": initial_status.value,
         }
 
     finally:
@@ -1330,6 +1466,132 @@ async def test_issue_invoice_rolls_back_when_ledger_account_is_inactive() -> Non
                         AuditLog.resource_id == invoice.id,
                     )
                 )
+        finally:
+            await engine.dispose()
+
+        assert audit_log is None
+
+    finally:
+        await cleanup_test_data(
+            email=email,
+            tenant_slugs=(tenant_slug,),
+            role_name=role_name,
+        )
+
+
+@pytest.mark.integration
+async def test_void_issued_invoice_rolls_back_when_issued_journal_is_inconsistent() -> None:
+    unique = uuid4()
+
+    email = f"billing-void-rollback-{unique}@example.com"
+    password = "very-secure-billing-password"
+    tenant_slug = f"billing-void-rollback-tenant-{unique}"
+    role_name = f"billing-void-rollback-role-{unique}"
+
+    tenant, customer = await create_lifecycle_context(
+        email=email,
+        password=password,
+        tenant_slug=tenant_slug,
+        role_name=role_name,
+        permission_codes=(
+            Permissions.INVOICE_ISSUE,
+            Permissions.INVOICE_VOID,
+        ),
+    )
+
+    await create_ledger_system_accounts(
+        tenant_id=tenant.id,
+    )
+
+    invoice = await create_invoice(
+        tenant_id=tenant.id,
+        customer_id=customer.id,
+        invoice_number="INV-VOID-ROLLBACK-001",
+        status=InvoiceStatus.DRAFT,
+        with_line=True,
+    )
+
+    try:
+        access_token = login_and_get_access_token(
+            email=email,
+            password=password,
+        )
+
+        with TestClient(app) as client:
+            issue_response = client.post(
+                f"/api/v1/tenants/{tenant.id}/invoices/{invoice.id}/issue",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                },
+            )
+
+        assert issue_response.status_code == 200
+        assert issue_response.json()["status"] == InvoiceStatus.ISSUED.value
+
+        issued_entry, issued_lines = await get_invoice_journal(
+            tenant_id=tenant.id,
+            invoice_id=invoice.id,
+            source_type=JournalSourceType.INVOICE_ISSUED,
+        )
+
+        assert issued_entry is not None
+        assert issued_lines
+
+        await delete_invoice_journal_lines(
+            tenant_id=tenant.id,
+            invoice_id=invoice.id,
+            source_type=JournalSourceType.INVOICE_ISSUED,
+        )
+
+        with TestClient(app) as client:
+            void_response = client.post(
+                f"/api/v1/tenants/{tenant.id}/invoices/{invoice.id}/void",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                },
+            )
+
+        assert void_response.status_code == 409
+        assert void_response.json() == {
+            "detail": "Issued invoice ledger entry is inconsistent",
+        }
+
+        persisted_invoice = await get_invoice(
+            invoice_id=invoice.id,
+        )
+
+        assert persisted_invoice.status == InvoiceStatus.ISSUED
+
+        reversal_entry, reversal_lines = await get_invoice_journal(
+            tenant_id=tenant.id,
+            invoice_id=invoice.id,
+            source_type=JournalSourceType.INVOICE_VOIDED,
+        )
+
+        assert reversal_entry is None
+        assert reversal_lines == []
+
+        settings = get_settings()
+
+        engine = create_async_engine(
+            settings.database_url,
+            poolclass=NullPool,
+        )
+
+        try:
+            async with async_sessionmaker(
+                engine,
+                expire_on_commit=False,
+            )() as session:
+                audit_log = await session.scalar(
+                    select(AuditLog).where(
+                        AuditLog.tenant_id == tenant.id,
+                        AuditLog.action == "invoice.voided",
+                        AuditLog.resource_type == "invoice",
+                        AuditLog.resource_id == invoice.id,
+                    )
+                )
+
         finally:
             await engine.dispose()
 
