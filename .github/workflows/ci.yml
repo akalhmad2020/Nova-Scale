@@ -49,7 +49,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:18.6-alpine
+        image: pgvector/pgvector:0.8.6-pg18
         env:
           POSTGRES_DB: novascale_test
           POSTGRES_USER: novascale
@@ -87,7 +87,7 @@ jobs:
         run: uv run alembic upgrade head
 
       - name: Integration tests
-        run: uv run pytest -m integration
+        run: uv run pytest -m "integration and not external_ai"
 
   docker:
     runs-on: ubuntu-latest

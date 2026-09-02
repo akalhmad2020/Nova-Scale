@@ -40,6 +40,7 @@ class OutboxMessageRepository(Protocol):
         lease_duration: timedelta,
         claim_token: UUID,
         limit: int = 100,
+        event_types: tuple[str, ...],
     ) -> Sequence[OutboxMessage]: ...
 
     async def mark_processed(

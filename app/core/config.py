@@ -160,6 +160,14 @@ class Settings(BaseSettings):
         le=86400,
     )
 
+    ai_llm_provider: Literal["ollama"] = "ollama"
+    ai_ollama_base_url: str = "http://host.docker.internal:11434"
+    ai_ollama_model: str = "qwen2.5:3b"
+    ai_ollama_timeout_seconds: float = Field(default=180.0, ge=1.0, le=600.0)
+    ai_embedding_provider: Literal["ollama"] = "ollama"
+    ai_ollama_embedding_model: str = "nomic-embed-text"
+    ai_document_storage_root: str = "./storage"
+
     @model_validator(mode="after")
     def validate_production_settings(self) -> "Settings":
         if self.app_env != "production":

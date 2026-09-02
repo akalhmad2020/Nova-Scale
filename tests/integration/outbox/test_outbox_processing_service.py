@@ -58,8 +58,15 @@ class HandlerResolver:
     def __init__(
         self,
         handler: SuccessfulHandler | FailingHandler,
+        *,
+        event_types: tuple[str, ...],
     ) -> None:
         self._handler = handler
+        self._event_types = event_types
+
+    @property
+    def event_types(self) -> tuple[str, ...]:
+        return self._event_types
 
     def resolve(
         self,
@@ -80,6 +87,7 @@ async def clear_outbox(
 async def create_pending_message(
     session_factory: async_sessionmaker[AsyncSession],
     *,
+    event_type: str,
     attempt_count: int = 0,
 ) -> UUID:
     async with session_factory() as session:
@@ -87,7 +95,7 @@ async def create_pending_message(
 
         message = OutboxMessage(
             tenant_id=uuid4(),
-            event_type=f"processing.service.{uuid4()}",
+            event_type=event_type,
             payload={"type": "processing-service"},
             status=OutboxMessageStatus.PENDING.value,
             attempt_count=attempt_count,
@@ -113,10 +121,18 @@ async def test_processing_service_marks_successful_message_processed(
     async with session_factory() as cleanup_session:
         await clear_outbox(cleanup_session)
 
-    message_id = await create_pending_message(session_factory)
+    event_type = f"processing.service.{uuid4()}"
+
+    message_id = await create_pending_message(
+        session_factory,
+        event_type=event_type,
+    )
 
     handler = SuccessfulHandler()
-    resolver = HandlerResolver(handler)
+    resolver = HandlerResolver(
+        handler,
+        event_types=(event_type,),
+    )
 
     service = OutboxProcessingService(
         unit_of_work_factory=lambda: SQLAlchemyOutboxUnitOfWork(session_factory),
@@ -159,12 +175,20 @@ async def test_processing_service_schedules_retry_after_failure(
     async with session_factory() as cleanup_session:
         await clear_outbox(cleanup_session)
 
-    message_id = await create_pending_message(session_factory)
+    event_type = f"processing.service.{uuid4()}"
+
+    message_id = await create_pending_message(
+        session_factory,
+        event_type=event_type,
+    )
 
     handler = FailingHandler(
         error="Temporary provider failure",
     )
-    resolver = HandlerResolver(handler)
+    resolver = HandlerResolver(
+        handler,
+        event_types=(event_type,),
+    )
 
     policy = OutboxRetryPolicy(
         max_attempts=5,
@@ -214,15 +238,21 @@ async def test_processing_service_uses_exponential_retry_delay(
     async with session_factory() as cleanup_session:
         await clear_outbox(cleanup_session)
 
+    event_type = f"processing.service.{uuid4()}"
+
     message_id = await create_pending_message(
         session_factory,
+        event_type=event_type,
         attempt_count=1,
     )
 
     handler = FailingHandler(
         error="Still unavailable",
     )
-    resolver = HandlerResolver(handler)
+    resolver = HandlerResolver(
+        handler,
+        event_types=(event_type,),
+    )
 
     service = OutboxProcessingService(
         unit_of_work_factory=lambda: SQLAlchemyOutboxUnitOfWork(session_factory),
@@ -271,15 +301,21 @@ async def test_processing_service_marks_final_attempt_failed(
         await clear_outbox(cleanup_session)
 
     # max_attempts=3, so this message has already consumed two attempts.
+    event_type = f"processing.service.{uuid4()}"
+
     message_id = await create_pending_message(
         session_factory,
+        event_type=event_type,
         attempt_count=2,
     )
 
     handler = FailingHandler(
         error="Permanent failure",
     )
-    resolver = HandlerResolver(handler)
+    resolver = HandlerResolver(
+        handler,
+        event_types=(event_type,),
+    )
 
     service = OutboxProcessingService(
         unit_of_work_factory=lambda: SQLAlchemyOutboxUnitOfWork(session_factory),
@@ -323,8 +359,13 @@ async def test_processing_service_returns_zero_when_nothing_is_ready(
     async with session_factory() as cleanup_session:
         await clear_outbox(cleanup_session)
 
+    event_type = f"processing.service.{uuid4()}"
+
     handler = SuccessfulHandler()
-    resolver = HandlerResolver(handler)
+    resolver = HandlerResolver(
+        handler,
+        event_types=(event_type,),
+    )
 
     service = OutboxProcessingService(
         unit_of_work_factory=lambda: SQLAlchemyOutboxUnitOfWork(session_factory),

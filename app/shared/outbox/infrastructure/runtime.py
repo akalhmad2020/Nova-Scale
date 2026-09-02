@@ -5,6 +5,9 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
 )
 
+from app.ai.infrastructure.outbox.registry import (
+    register_ai_outbox_handlers,
+)
 from app.core.config import Settings
 from app.modules.notifications.infrastructure.outbox.registry import (
     build_notification_outbox_handler_registry,
@@ -27,6 +30,12 @@ def build_outbox_processing_service(
 ) -> OutboxProcessingService:
     handler_registry = build_notification_outbox_handler_registry(
         session_factory,
+    )
+
+    register_ai_outbox_handlers(
+        registry=handler_registry,
+        session_factory=session_factory,
+        settings=settings,
     )
 
     retry_policy = OutboxRetryPolicy(

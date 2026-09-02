@@ -82,12 +82,16 @@ class SQLAlchemyOutboxMessageRepository:
         lease_duration: timedelta,
         claim_token: UUID,
         limit: int = 100,
+        event_types: tuple[str, ...],
     ) -> Sequence[OutboxMessage]:
         if lease_duration <= timedelta(0):
             raise ValueError("Lease duration must be positive.")
 
         if limit < 1:
             raise ValueError("Claim limit must be at least 1.")
+
+        if not event_types:
+            return ()
 
         pending_ready = and_(
             OutboxMessage.status == OutboxMessageStatus.PENDING.value,
@@ -103,10 +107,11 @@ class SQLAlchemyOutboxMessageRepository:
         statement = (
             select(OutboxMessage)
             .where(
+                OutboxMessage.event_type.in_(event_types),
                 or_(
                     pending_ready,
                     expired_processing,
-                )
+                ),
             )
             .order_by(
                 OutboxMessage.available_at.asc().nullsfirst(),

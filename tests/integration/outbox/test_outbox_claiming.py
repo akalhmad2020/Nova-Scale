@@ -74,6 +74,7 @@ async def test_claim_ready_marks_message_processing(
         now=now,
         lease_duration=lease_duration,
         claim_token=claim_token,
+        event_types=(message.event_type,),
         limit=1,
     )
 
@@ -110,6 +111,7 @@ async def test_claim_ready_ignores_future_pending_message(
         now=now,
         lease_duration=timedelta(minutes=5),
         claim_token=claim_token,
+        event_types=(future.event_type,),
     )
 
     assert claimed == []
@@ -145,6 +147,7 @@ async def test_claim_ready_does_not_reclaim_active_lease(
         now=now,
         lease_duration=timedelta(minutes=5),
         claim_token=new_claim_token,
+        event_types=(processing.event_type,),
     )
 
     assert claimed == []
@@ -181,6 +184,7 @@ async def test_claim_ready_reclaims_expired_lease(
         now=now,
         lease_duration=lease_duration,
         claim_token=new_claim_token,
+        event_types=(processing.event_type,),
     )
 
     assert len(claimed) == 1
@@ -204,10 +208,15 @@ async def test_claim_ready_respects_limit(
     lease_duration = timedelta(minutes=5)
     claim_token = uuid4()
 
+    event_types: list[str] = []
+
     for index in range(3):
+        event_type = f"claim.limit.{index}.{uuid4()}"
+        event_types.append(event_type)
+
         await repository.add(
             make_message(
-                event_type=f"claim.limit.{index}.{uuid4()}",
+                event_type=event_type,
             )
         )
 
@@ -215,6 +224,7 @@ async def test_claim_ready_respects_limit(
         now=now,
         lease_duration=lease_duration,
         claim_token=claim_token,
+        event_types=tuple(event_types),
         limit=2,
     )
 
@@ -243,6 +253,7 @@ async def test_claim_ready_rejects_non_positive_lease_duration(
             now=now,
             lease_duration=timedelta(0),
             claim_token=claim_token,
+            event_types=("test.event",),
         )
 
     with pytest.raises(
@@ -253,6 +264,7 @@ async def test_claim_ready_rejects_non_positive_lease_duration(
             now=now,
             lease_duration=timedelta(seconds=-1),
             claim_token=claim_token,
+            event_types=("test.event",),
         )
 
 
@@ -269,6 +281,7 @@ async def test_claim_ready_rejects_invalid_limit(
             now=datetime.now(UTC),
             lease_duration=timedelta(minutes=5),
             claim_token=uuid4(),
+            event_types=("test.event",),
             limit=0,
         )
 
@@ -286,6 +299,7 @@ async def test_concurrent_workers_claim_different_messages(
         await clear_outbox(cleanup_session)
 
     message_ids: list[UUID] = []
+    event_types: list[str] = []
 
     async with session_factory() as setup_session:
         repository = SQLAlchemyOutboxMessageRepository(
@@ -293,8 +307,11 @@ async def test_concurrent_workers_claim_different_messages(
         )
 
         for index in range(4):
+            event_type = f"claim.concurrent.{index}.{uuid4()}"
+            event_types.append(event_type)
+
             message = make_message(
-                event_type=f"claim.concurrent.{index}.{uuid4()}",
+                event_type=event_type,
             )
 
             await repository.add(message)
@@ -317,6 +334,7 @@ async def test_concurrent_workers_claim_different_messages(
             now=now,
             lease_duration=lease_duration,
             claim_token=first_claim_token,
+            event_types=tuple(event_types),
             limit=2,
         )
 
@@ -331,6 +349,7 @@ async def test_concurrent_workers_claim_different_messages(
             now=now,
             lease_duration=lease_duration,
             claim_token=second_claim_token,
+            event_types=tuple(event_types),
             limit=2,
         )
 
@@ -378,13 +397,15 @@ async def test_reclaimed_message_replaces_previous_claim_token(
     async with session_factory() as cleanup_session:
         await clear_outbox(cleanup_session)
 
+    event_type = f"claim.reclaim-token.{uuid4()}"
+
     async with session_factory() as first_session:
         repository = SQLAlchemyOutboxMessageRepository(
             first_session,
         )
 
         message = make_message(
-            event_type=f"claim.reclaim-token.{uuid4()}",
+            event_type=event_type,
         )
 
         await repository.add(message)
@@ -393,6 +414,7 @@ async def test_reclaimed_message_replaces_previous_claim_token(
             now=base_time,
             lease_duration=timedelta(minutes=5),
             claim_token=first_claim_token,
+            event_types=(event_type,),
             limit=1,
         )
 
@@ -414,6 +436,7 @@ async def test_reclaimed_message_replaces_previous_claim_token(
             now=reclaim_time,
             lease_duration=timedelta(minutes=5),
             claim_token=second_claim_token,
+            event_types=(event_type,),
             limit=1,
         )
 
@@ -428,3 +451,46 @@ async def test_reclaimed_message_replaces_previous_claim_token(
         assert reclaimed_message.lease_expires_at == reclaim_time + timedelta(minutes=5)
 
         await second_session.commit()
+
+
+async def test_claim_ready_only_claims_allowed_event_types(
+    db_session: AsyncSession,
+) -> None:
+    await clear_outbox(db_session)
+
+    repository = SQLAlchemyOutboxMessageRepository(db_session)
+
+    now = datetime.now(UTC)
+    claim_token = uuid4()
+
+    allowed_event_type = f"notification.allowed.{uuid4()}"
+    ignored_event_type = f"document.ready.{uuid4()}"
+
+    allowed_message = make_message(
+        event_type=allowed_event_type,
+    )
+    ignored_message = make_message(
+        event_type=ignored_event_type,
+    )
+
+    await repository.add(allowed_message)
+    await repository.add(ignored_message)
+
+    claimed = await repository.claim_ready(
+        now=now,
+        lease_duration=timedelta(minutes=5),
+        claim_token=claim_token,
+        event_types=(allowed_event_type,),
+        limit=10,
+    )
+
+    assert len(claimed) == 1
+    assert claimed[0].id == allowed_message.id
+
+    assert allowed_message.status == OutboxMessageStatus.PROCESSING.value
+    assert allowed_message.claim_token == claim_token
+
+    assert ignored_message.status == OutboxMessageStatus.PENDING.value
+    assert ignored_message.attempt_count == 0
+    assert ignored_message.claim_token is None
+    assert ignored_message.lease_expires_at is None

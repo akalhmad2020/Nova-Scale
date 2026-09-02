@@ -28,6 +28,12 @@ from app.modules.packages.infrastructure.repositories.package_repository import 
 from app.modules.shipments.infrastructure.repositories.shipment_repository import (
     ShipmentRepository,
 )
+from app.shared.outbox.application.ports.repositories import (
+    OutboxMessageRepository,
+)
+from app.shared.outbox.infrastructure.repositories.sqlalchemy import (
+    SQLAlchemyOutboxMessageRepository,
+)
 
 
 class SQLAlchemyUnitOfWork:
@@ -44,6 +50,7 @@ class SQLAlchemyUnitOfWork:
         self.packages: PackageRepository
         self.carriers: CarrierRepository
         self.carrier_services: CarrierServiceRepository
+        self.outbox_messages: OutboxMessageRepository
 
     async def __aenter__(self) -> "SQLAlchemyUnitOfWork":
         self._session = self._session_factory()
@@ -54,6 +61,9 @@ class SQLAlchemyUnitOfWork:
         self.packages = PackageRepository(self._session)
         self.carriers = CarrierRepository(self._session)
         self.carrier_services = CarrierServiceRepository(self._session)
+        self.outbox_messages = SQLAlchemyOutboxMessageRepository(
+            self._session,
+        )
 
         return self
 

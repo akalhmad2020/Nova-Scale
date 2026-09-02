@@ -47,6 +47,7 @@ class OutboxProcessingService:
                 now=now,
                 lease_duration=self._lease_duration,
                 claim_token=claim_token,
+                event_types=self._handler_resolver.event_types,
                 limit=self._batch_size,
             )
 

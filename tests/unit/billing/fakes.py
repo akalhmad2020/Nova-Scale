@@ -257,13 +257,20 @@ class FakeOutboxMessageRepository:
         now: datetime,
         lease_duration: timedelta,
         claim_token: UUID,
+        event_types: tuple[str, ...],
         limit: int = 100,
     ) -> Sequence[OutboxMessage]:
         claimed: list[OutboxMessage] = []
 
+        if not event_types:
+            return claimed
+
         for message in self.items:
             if len(claimed) >= limit:
                 break
+
+            if message.event_type not in event_types:
+                continue
 
             pending_and_ready = message.status == OutboxMessageStatus.PENDING.value and (
                 message.available_at is None or message.available_at <= now
@@ -282,6 +289,7 @@ class FakeOutboxMessageRepository:
             message.attempt_count += 1
             message.claim_token = claim_token
             message.lease_expires_at = now + lease_duration
+            message.processed_at = None
 
             claimed.append(message)
 
@@ -334,6 +342,7 @@ class FakeOutboxMessageRepository:
 
         message.status = OutboxMessageStatus.PENDING.value
         message.available_at = available_at
+        message.processed_at = None
         message.claim_token = None
         message.lease_expires_at = None
         message.last_error = error
@@ -359,6 +368,7 @@ class FakeOutboxMessageRepository:
             return False
 
         message.status = OutboxMessageStatus.FAILED.value
+        message.processed_at = None
         message.claim_token = None
         message.lease_expires_at = None
         message.last_error = error
