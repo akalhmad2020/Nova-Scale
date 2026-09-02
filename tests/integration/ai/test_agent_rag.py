@@ -75,6 +75,7 @@ async def test_agent_answers_from_real_rag_context(
 
     assert "48" in normalized_answer
 
+
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_agent_rag_cannot_retrieve_context_from_another_tenant(

@@ -94,6 +94,7 @@ class FakeVectorStore:
 
         return self.search_results
 
+
 class FakeAgentPlanner:
     def __init__(self) -> None:
         self.questions: list[str] = []
