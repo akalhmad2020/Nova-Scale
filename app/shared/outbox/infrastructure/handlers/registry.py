@@ -14,6 +14,10 @@ class OutboxMessageHandlerRegistry:
     ) -> None:
         self._handlers = handlers.copy()
 
+    @property
+    def event_types(self) -> tuple[str, ...]:
+        return tuple(self._handlers)
+
     def register(
         self,
         event_type: str,

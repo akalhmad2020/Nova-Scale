@@ -42,6 +42,7 @@ async def create_claimed_message(
         now=now,
         lease_duration=timedelta(minutes=5),
         claim_token=claim_token,
+        event_types=(message.event_type,),
         limit=1,
     )
 
@@ -170,6 +171,7 @@ async def test_stale_worker_cannot_mark_message_processed(
         now=base_time + timedelta(minutes=6),
         lease_duration=timedelta(minutes=5),
         claim_token=new_claim_token,
+        event_types=(message.event_type,),
         limit=1,
     )
 
@@ -211,6 +213,7 @@ async def test_stale_worker_cannot_release_message_for_retry(
         now=base_time + timedelta(minutes=6),
         lease_duration=timedelta(minutes=5),
         claim_token=new_claim_token,
+        event_types=(message.event_type,),
         limit=1,
     )
 
@@ -251,6 +254,7 @@ async def test_stale_worker_cannot_mark_message_failed(
         now=base_time + timedelta(minutes=6),
         lease_duration=timedelta(minutes=5),
         claim_token=new_claim_token,
+        event_types=(message.event_type,),
         limit=1,
     )
 

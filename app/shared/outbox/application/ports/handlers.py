@@ -13,6 +13,9 @@ class OutboxMessageHandler(Protocol):
 
 
 class OutboxMessageHandlerResolver(Protocol):
+    @property
+    def event_types(self) -> tuple[str, ...]: ...
+
     def resolve(
         self,
         event_type: str,
