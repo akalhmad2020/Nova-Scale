@@ -5,6 +5,7 @@ from app.ai.infrastructure.llm.ollama_provider import OllamaLLMProvider
 
 
 @pytest.mark.integration
+@pytest.mark.external_ai
 @pytest.mark.asyncio
 async def test_ollama_provider_generates_response() -> None:
     provider = OllamaLLMProvider(

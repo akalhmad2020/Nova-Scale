@@ -15,6 +15,7 @@ from app.core.config import get_settings
 
 
 @pytest.mark.integration
+@pytest.mark.external_ai
 @pytest.mark.asyncio
 async def test_agent_answers_from_real_rag_context(
     db_session: AsyncSession,
@@ -77,6 +78,7 @@ async def test_agent_answers_from_real_rag_context(
 
 
 @pytest.mark.integration
+@pytest.mark.external_ai
 @pytest.mark.asyncio
 async def test_agent_rag_cannot_retrieve_context_from_another_tenant(
     db_session: AsyncSession,

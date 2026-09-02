@@ -22,6 +22,7 @@ from app.core.config import get_settings
 
 
 @pytest.mark.integration
+@pytest.mark.external_ai
 @pytest.mark.asyncio
 async def test_stored_document_can_be_indexed_and_retrieved(
     db_session: AsyncSession,

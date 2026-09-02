@@ -8,6 +8,7 @@ from app.core.config import get_settings
 
 
 @pytest.mark.integration
+@pytest.mark.external_ai
 @pytest.mark.asyncio
 async def test_agent_runtime_direct_answer_with_real_llm(
     db_session: AsyncSession,

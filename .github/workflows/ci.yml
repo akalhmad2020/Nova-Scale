@@ -87,7 +87,7 @@ jobs:
         run: uv run alembic upgrade head
 
       - name: Integration tests
-        run: uv run pytest -m integration
+        run: uv run pytest -m "integration and not external_ai"
 
   docker:
     runs-on: ubuntu-latest

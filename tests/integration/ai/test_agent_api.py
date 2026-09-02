@@ -283,6 +283,7 @@ def test_agent_endpoint_requires_authentication() -> None:
 
 
 @pytest.mark.integration
+@pytest.mark.external_ai
 @pytest.mark.asyncio
 async def test_agent_endpoint_runs_authenticated_agent() -> None:
     email = f"agent-api-{uuid4()}@example.com"

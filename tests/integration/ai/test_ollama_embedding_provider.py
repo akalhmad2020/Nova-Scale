@@ -6,6 +6,7 @@ from app.ai.infrastructure.embeddings.ollama_embedding_provider import (
 
 
 @pytest.mark.integration
+@pytest.mark.external_ai
 @pytest.mark.asyncio
 async def test_ollama_embedding_provider_generates_embedding() -> None:
     provider = OllamaEmbeddingProvider(
@@ -23,6 +24,7 @@ async def test_ollama_embedding_provider_generates_embedding() -> None:
 
 
 @pytest.mark.integration
+@pytest.mark.external_ai
 @pytest.mark.asyncio
 async def test_ollama_embedding_provider_generates_multiple_embeddings() -> None:
     provider = OllamaEmbeddingProvider(

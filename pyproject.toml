@@ -59,6 +59,7 @@ testpaths = ["tests"]
 addopts = "-ra -m 'not integration'"
 markers = [
     "integration: tests that require external infrastructure such as PostgreSQL",
+    "external_ai: tests that require a running external AI runtime such as Ollama",
 ]
 asyncio_mode = "auto"
 pythonpath = ["."]

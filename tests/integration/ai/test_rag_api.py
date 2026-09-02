@@ -282,6 +282,7 @@ async def cleanup_test_data(
 
 
 @pytest.mark.integration
+@pytest.mark.external_ai
 async def test_ask_question_endpoint_runs_authenticated_rag_pipeline() -> None:
     email = f"rag-api-{uuid4()}@example.com"
     password = "very-secure-rag-password"

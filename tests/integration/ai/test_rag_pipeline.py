@@ -20,6 +20,7 @@ from app.core.config import get_settings
 
 
 @pytest.mark.integration
+@pytest.mark.external_ai
 @pytest.mark.asyncio
 async def test_rag_pipeline_end_to_end(
     db_session: AsyncSession,

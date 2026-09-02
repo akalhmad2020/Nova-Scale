@@ -41,7 +41,10 @@ from app.shared.outbox.infrastructure.runtime import (
     build_outbox_processing_service,
 )
 
-pytestmark = pytest.mark.integration
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.external_ai,
+]
 
 
 async def create_ready_document_and_outbox_message(

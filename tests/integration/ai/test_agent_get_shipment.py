@@ -27,6 +27,7 @@ from app.modules.shipments.infrastructure.models.shipment import Shipment
 
 
 @pytest.mark.integration
+@pytest.mark.external_ai
 @pytest.mark.asyncio
 async def test_agent_gets_real_shipment_with_real_llm(
     db_session: AsyncSession,
@@ -123,6 +124,7 @@ async def test_agent_gets_real_shipment_with_real_llm(
 
 
 @pytest.mark.integration
+@pytest.mark.external_ai
 @pytest.mark.asyncio
 async def test_agent_cannot_access_shipment_from_another_tenant(
     db_session: AsyncSession,
