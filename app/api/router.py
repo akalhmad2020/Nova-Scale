@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.api.routes.ai import router as ai_router
 from app.api.routes.health import router as health_router
 from app.modules.billing.api.routes import router as billing_router
 from app.modules.carriers.api.routes import router as carriers_router
@@ -42,6 +43,7 @@ def create_api_router(api_v1_prefix: str) -> APIRouter:
     versioned_router.include_router(documents_router)
     versioned_router.include_router(billing_router)
     versioned_router.include_router(payments_router)
+    versioned_router.include_router(ai_router)
 
     router.include_router(versioned_router)
 

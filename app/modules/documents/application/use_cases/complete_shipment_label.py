@@ -1,6 +1,9 @@
 from dataclasses import dataclass
 from uuid import UUID
 
+from app.modules.documents.application.events import (
+    DOCUMENT_READY_EVENT_TYPE,
+)
 from app.modules.documents.application.exceptions import (
     DocumentNotFoundError,
     DocumentShipmentMismatchError,
@@ -19,6 +22,10 @@ from app.modules.documents.domain.enums import (
     LabelStatus,
 )
 from app.modules.documents.infrastructure.models.shipment_label import ShipmentLabel
+from app.shared.outbox.domain.enums import OutboxMessageStatus
+from app.shared.outbox.infrastructure.models.outbox_message import (
+    OutboxMessage,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +86,25 @@ class CompleteShipmentLabelUseCase:
 
             if command.tracking_number is not None:
                 shipment_label.tracking_number = command.tracking_number.strip()
+
+            outbox_message = OutboxMessage(
+                tenant_id=command.tenant_id,
+                event_type=DOCUMENT_READY_EVENT_TYPE,
+                payload={
+                    "document_id": str(document.id),
+                },
+                status=OutboxMessageStatus.PENDING.value,
+                attempt_count=0,
+                available_at=None,
+                claim_token=None,
+                lease_expires_at=None,
+                processed_at=None,
+                last_error=None,
+            )
+
+            await self._unit_of_work.outbox_messages.add(
+                outbox_message,
+            )
 
             await self._unit_of_work.flush()
             await self._unit_of_work.refresh(shipment_label)

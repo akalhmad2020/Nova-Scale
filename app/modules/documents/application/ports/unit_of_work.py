@@ -20,6 +20,9 @@ from app.modules.packages.infrastructure.repositories.package_repository import 
 from app.modules.shipments.infrastructure.repositories.shipment_repository import (
     ShipmentRepository,
 )
+from app.shared.outbox.application.ports.repositories import (
+    OutboxMessageRepository,
+)
 
 
 class DocumentsUnitOfWork(Protocol):
@@ -29,6 +32,7 @@ class DocumentsUnitOfWork(Protocol):
     packages: PackageRepository
     carriers: CarrierRepository
     carrier_services: CarrierServiceRepository
+    outbox_messages: OutboxMessageRepository
 
     async def __aenter__(self) -> Self: ...
 

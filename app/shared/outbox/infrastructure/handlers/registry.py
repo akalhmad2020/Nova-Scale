@@ -14,6 +14,13 @@ class OutboxMessageHandlerRegistry:
     ) -> None:
         self._handlers = handlers.copy()
 
+    def register(
+        self,
+        event_type: str,
+        handler: OutboxMessageHandler,
+    ) -> None:
+        self._handlers[event_type] = handler
+
     def resolve(
         self,
         event_type: str,
