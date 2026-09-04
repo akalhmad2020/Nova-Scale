@@ -55,8 +55,7 @@ class FakeShipmentRepository:
         return [
             shipment
             for shipment in self.items
-            if shipment.tenant_id == tenant_id
-            and shipment.deleted_at is None
+            if shipment.tenant_id == tenant_id and shipment.deleted_at is None
         ]
 
     def add(
@@ -78,8 +77,7 @@ class FakeCustomerRepository:
             (
                 customer
                 for customer in self.items
-                if customer.id == customer_id
-                and customer.deleted_at is None
+                if customer.id == customer_id and customer.deleted_at is None
             ),
             None,
         )
@@ -123,8 +121,7 @@ class FakeCustomerRepository:
         return [
             customer
             for customer in self.items
-            if customer.tenant_id == tenant_id
-            and customer.deleted_at is None
+            if customer.tenant_id == tenant_id and customer.deleted_at is None
         ]
 
     def add(
@@ -146,8 +143,7 @@ class FakeLocationRepository:
             (
                 location
                 for location in self.items
-                if location.id == location_id
-                and location.deleted_at is None
+                if location.id == location_id and location.deleted_at is None
             ),
             None,
         )
@@ -191,8 +187,7 @@ class FakeLocationRepository:
         return [
             location
             for location in self.items
-            if location.tenant_id == tenant_id
-            and location.deleted_at is None
+            if location.tenant_id == tenant_id and location.deleted_at is None
         ]
 
     def add(
@@ -214,8 +209,7 @@ class FakeShipmentEventRepository:
         return [
             event
             for event in self.items
-            if event.shipment_id == shipment_id
-            and event.tenant_id == tenant_id
+            if event.shipment_id == shipment_id and event.tenant_id == tenant_id
         ]
 
     def add(
@@ -245,8 +239,7 @@ class FakeAuditLogRepository:
             (
                 audit_log
                 for audit_log in self.items
-                if audit_log.tenant_id == tenant_id
-                and audit_log.id == audit_log_id
+                if audit_log.tenant_id == tenant_id and audit_log.id == audit_log_id
             ),
             None,
         )
@@ -264,53 +257,25 @@ class FakeAuditLogRepository:
         occurred_from: datetime | None = None,
         occurred_to: datetime | None = None,
     ) -> Sequence[AuditLog]:
-        items = [
-            audit_log
-            for audit_log in self.items
-            if audit_log.tenant_id == tenant_id
-        ]
+        items = [audit_log for audit_log in self.items if audit_log.tenant_id == tenant_id]
 
         if actor_id is not None:
-            items = [
-                audit_log
-                for audit_log in items
-                if audit_log.actor_id == actor_id
-            ]
+            items = [audit_log for audit_log in items if audit_log.actor_id == actor_id]
 
         if action is not None:
-            items = [
-                audit_log
-                for audit_log in items
-                if audit_log.action == action
-            ]
+            items = [audit_log for audit_log in items if audit_log.action == action]
 
         if resource_type is not None:
-            items = [
-                audit_log
-                for audit_log in items
-                if audit_log.resource_type == resource_type
-            ]
+            items = [audit_log for audit_log in items if audit_log.resource_type == resource_type]
 
         if resource_id is not None:
-            items = [
-                audit_log
-                for audit_log in items
-                if audit_log.resource_id == resource_id
-            ]
+            items = [audit_log for audit_log in items if audit_log.resource_id == resource_id]
 
         if occurred_from is not None:
-            items = [
-                audit_log
-                for audit_log in items
-                if audit_log.occurred_at >= occurred_from
-            ]
+            items = [audit_log for audit_log in items if audit_log.occurred_at >= occurred_from]
 
         if occurred_to is not None:
-            items = [
-                audit_log
-                for audit_log in items
-                if audit_log.occurred_at <= occurred_to
-            ]
+            items = [audit_log for audit_log in items if audit_log.occurred_at <= occurred_to]
 
         return items[offset : offset + limit]
 
@@ -346,11 +311,14 @@ class FakeUnitOfWork:
         self.flushed = True
 
         for shipment in self.shipments.items:
-            if getattr(
-                shipment,
-                "id",
-                None,
-            ) is None:
+            if (
+                getattr(
+                    shipment,
+                    "id",
+                    None,
+                )
+                is None
+            ):
                 shipment.id = uuid4()
 
     async def commit(self) -> None:
@@ -364,4 +332,3 @@ class FakeUnitOfWork:
         shipment: Shipment,
     ) -> None:
         self.refreshed = True
-        
