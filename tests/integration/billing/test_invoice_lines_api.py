@@ -750,6 +750,169 @@ async def test_add_multiple_invoice_lines_recalculates_subtotal_and_total() -> N
 
 
 @pytest.mark.integration
+async def test_list_invoice_lines_endpoint_returns_lines_in_order() -> None:
+    unique = uuid4()
+
+    email = f"billing-line-list-{unique}@example.com"
+    password = "very-secure-billing-password"
+    tenant_slug = f"billing-line-list-tenant-{unique}"
+    role_name = f"billing-line-list-role-{unique}"
+
+    tenant, customer, shipment = await create_lines_context(
+        email=email,
+        password=password,
+        tenant_slug=tenant_slug,
+        role_name=role_name,
+        permission_codes=(
+            Permissions.INVOICE_READ,
+            Permissions.INVOICE_UPDATE,
+        ),
+    )
+
+    invoice = await create_invoice(
+        tenant_id=tenant.id,
+        customer_id=customer.id,
+        invoice_number="INV-LIST-001",
+    )
+
+    try:
+        access_token = login_and_get_access_token(
+            email=email,
+            password=password,
+        )
+
+        with TestClient(app) as client:
+            first_response = client.post(
+                f"/api/v1/tenants/{tenant.id}/invoices/{invoice.id}/lines",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                },
+                json=invoice_line_payload(
+                    shipment_id=shipment.id,
+                    description="First line",
+                    quantity="1.0000",
+                    unit_price="10.00",
+                ),
+            )
+
+            second_response = client.post(
+                f"/api/v1/tenants/{tenant.id}/invoices/{invoice.id}/lines",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                },
+                json=invoice_line_payload(
+                    shipment_id=shipment.id,
+                    description="Second line",
+                    quantity="2.0000",
+                    unit_price="5.00",
+                ),
+            )
+
+            response = client.get(
+                f"/api/v1/tenants/{tenant.id}/invoices/{invoice.id}/lines",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                },
+            )
+
+        assert first_response.status_code == 201
+        assert second_response.status_code == 201
+
+        assert response.status_code == 200
+
+        body = response.json()
+
+        assert len(body) == 2
+
+        assert body[0]["id"] == first_response.json()["id"]
+        assert body[0]["description"] == "First line"
+        assert body[0]["tenant_id"] == str(tenant.id)
+        assert body[0]["invoice_id"] == str(invoice.id)
+
+        assert body[1]["id"] == second_response.json()["id"]
+        assert body[1]["description"] == "Second line"
+        assert body[1]["tenant_id"] == str(tenant.id)
+        assert body[1]["invoice_id"] == str(invoice.id)
+
+    finally:
+        await cleanup_test_data(
+            email=email,
+            tenant_slugs=(tenant_slug,),
+            role_name=role_name,
+        )
+
+
+@pytest.mark.integration
+async def test_list_invoice_lines_endpoint_hides_foreign_invoice() -> None:
+    unique = uuid4()
+
+    first_email = f"billing-line-list-first-{unique}@example.com"
+    second_email = f"billing-line-list-second-{unique}@example.com"
+
+    password = "very-secure-billing-password"
+
+    first_tenant_slug = f"billing-line-list-first-tenant-{unique}"
+    second_tenant_slug = f"billing-line-list-second-tenant-{unique}"
+
+    first_role_name = f"billing-line-list-first-role-{unique}"
+    second_role_name = f"billing-line-list-second-role-{unique}"
+
+    first_tenant, _, _ = await create_lines_context(
+        email=first_email,
+        password=password,
+        tenant_slug=first_tenant_slug,
+        role_name=first_role_name,
+        permission_codes=(Permissions.INVOICE_READ,),
+    )
+
+    second_tenant, second_customer, _ = await create_lines_context(
+        email=second_email,
+        password=password,
+        tenant_slug=second_tenant_slug,
+        role_name=second_role_name,
+        permission_codes=(Permissions.INVOICE_READ,),
+    )
+
+    foreign_invoice = await create_invoice(
+        tenant_id=second_tenant.id,
+        customer_id=second_customer.id,
+        invoice_number="INV-FOREIGN-LIST-001",
+    )
+
+    try:
+        access_token = login_and_get_access_token(
+            email=first_email,
+            password=password,
+        )
+
+        with TestClient(app) as client:
+            response = client.get(
+                f"/api/v1/tenants/{first_tenant.id}/invoices/{foreign_invoice.id}/lines",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                },
+            )
+
+        assert response.status_code == 404
+        assert response.json() == {
+            "detail": "Invoice not found",
+        }
+
+    finally:
+        await cleanup_test_data(
+            email=first_email,
+            tenant_slugs=(first_tenant_slug,),
+            role_name=first_role_name,
+        )
+
+        await cleanup_test_data(
+            email=second_email,
+            tenant_slugs=(second_tenant_slug,),
+            role_name=second_role_name,
+        )
+
+
+@pytest.mark.integration
 async def test_add_invoice_line_endpoint_requires_permission() -> None:
     unique = uuid4()
 

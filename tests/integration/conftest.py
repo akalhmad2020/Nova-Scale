@@ -1,6 +1,8 @@
+import os
 from collections.abc import AsyncIterator
 
 import pytest
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -9,15 +11,28 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import NullPool
 
-from app.core.config import get_settings
+
+def get_test_database_url() -> str:
+    database_url = os.getenv("TEST_DATABASE_URL")
+
+    if not database_url:
+        raise RuntimeError("TEST_DATABASE_URL must be set when running integration tests.")
+
+    parsed_url = make_url(database_url)
+    database_name = parsed_url.database
+
+    if database_name != "novascale_test":
+        raise RuntimeError(
+            f"Integration tests must use the 'novascale_test' database. Received: {database_name!r}"
+        )
+
+    return database_url
 
 
 @pytest.fixture
 async def test_engine() -> AsyncIterator[AsyncEngine]:
-    settings = get_settings()
-
     engine = create_async_engine(
-        settings.database_url,
+        get_test_database_url(),
         poolclass=NullPool,
     )
 

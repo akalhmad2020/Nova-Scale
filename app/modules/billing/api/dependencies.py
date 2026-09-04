@@ -11,6 +11,9 @@ from app.modules.billing.application.use_cases.get_invoice import (
 from app.modules.billing.application.use_cases.issue_invoice import (
     IssueInvoiceUseCase,
 )
+from app.modules.billing.application.use_cases.list_invoice_lines import (
+    ListInvoiceLinesUseCase,
+)
 from app.modules.billing.application.use_cases.list_invoices import (
     ListInvoicesUseCase,
 )
@@ -51,6 +54,12 @@ def get_add_invoice_line_use_case() -> AddInvoiceLineUseCase:
 
 def get_remove_invoice_line_use_case() -> RemoveInvoiceLineUseCase:
     return RemoveInvoiceLineUseCase(
+        unit_of_work=SQLAlchemyBillingUnitOfWork(SessionFactory),
+    )
+
+
+def get_list_invoice_lines_use_case() -> ListInvoiceLinesUseCase:
+    return ListInvoiceLinesUseCase(
         unit_of_work=SQLAlchemyBillingUnitOfWork(SessionFactory),
     )
 
