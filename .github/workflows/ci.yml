@@ -66,6 +66,7 @@ jobs:
       APP_ENV: test
       AUTH_JWT_SECRET: "ci-only-jwt-secret-do-not-use-in-production-0123456789abcdef"
       DATABASE_URL: postgresql+asyncpg://novascale:novascale_test_password@127.0.0.1:5432/novascale_test
+      TEST_DATABASE_URL: postgresql+asyncpg://novascale:novascale_test_password@127.0.0.1:5432/novascale_test
 
     steps:
       - name: Checkout
@@ -108,3 +109,4 @@ jobs:
             -e DATABASE_URL='postgresql+asyncpg://user:pass@localhost:5432/db' \
             novascale:${{ github.sha }} \
             -c 'python -c "import app.main; print(\"production image import: ok\")"'
+            

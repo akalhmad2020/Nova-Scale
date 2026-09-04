@@ -6,6 +6,9 @@ from uuid import UUID, uuid4
 from app.modules.audit.infrastructure.models.audit_log import AuditLog
 from app.modules.customers.infrastructure.models.customer import Customer
 from app.modules.locations.infrastructure.models.location import Location
+from app.modules.shipment_events.infrastructure.models.shipment_event import (
+    ShipmentEvent,
+)
 from app.modules.shipments.infrastructure.models.shipment import Shipment
 
 
@@ -52,7 +55,8 @@ class FakeShipmentRepository:
         return [
             shipment
             for shipment in self.items
-            if shipment.tenant_id == tenant_id and shipment.deleted_at is None
+            if shipment.tenant_id == tenant_id
+            and shipment.deleted_at is None
         ]
 
     def add(
@@ -74,7 +78,8 @@ class FakeCustomerRepository:
             (
                 customer
                 for customer in self.items
-                if customer.id == customer_id and customer.deleted_at is None
+                if customer.id == customer_id
+                and customer.deleted_at is None
             ),
             None,
         )
@@ -118,7 +123,8 @@ class FakeCustomerRepository:
         return [
             customer
             for customer in self.items
-            if customer.tenant_id == tenant_id and customer.deleted_at is None
+            if customer.tenant_id == tenant_id
+            and customer.deleted_at is None
         ]
 
     def add(
@@ -140,7 +146,8 @@ class FakeLocationRepository:
             (
                 location
                 for location in self.items
-                if location.id == location_id and location.deleted_at is None
+                if location.id == location_id
+                and location.deleted_at is None
             ),
             None,
         )
@@ -184,7 +191,8 @@ class FakeLocationRepository:
         return [
             location
             for location in self.items
-            if location.tenant_id == tenant_id and location.deleted_at is None
+            if location.tenant_id == tenant_id
+            and location.deleted_at is None
         ]
 
     def add(
@@ -192,6 +200,29 @@ class FakeLocationRepository:
         location: Location,
     ) -> None:
         self.items.append(location)
+
+
+class FakeShipmentEventRepository:
+    def __init__(self) -> None:
+        self.items: list[ShipmentEvent] = []
+
+    async def list_by_shipment(
+        self,
+        shipment_id: UUID,
+        tenant_id: UUID,
+    ) -> list[ShipmentEvent]:
+        return [
+            event
+            for event in self.items
+            if event.shipment_id == shipment_id
+            and event.tenant_id == tenant_id
+        ]
+
+    def add(
+        self,
+        event: ShipmentEvent,
+    ) -> None:
+        self.items.append(event)
 
 
 class FakeAuditLogRepository:
@@ -214,7 +245,8 @@ class FakeAuditLogRepository:
             (
                 audit_log
                 for audit_log in self.items
-                if audit_log.tenant_id == tenant_id and audit_log.id == audit_log_id
+                if audit_log.tenant_id == tenant_id
+                and audit_log.id == audit_log_id
             ),
             None,
         )
@@ -232,25 +264,53 @@ class FakeAuditLogRepository:
         occurred_from: datetime | None = None,
         occurred_to: datetime | None = None,
     ) -> Sequence[AuditLog]:
-        items = [audit_log for audit_log in self.items if audit_log.tenant_id == tenant_id]
+        items = [
+            audit_log
+            for audit_log in self.items
+            if audit_log.tenant_id == tenant_id
+        ]
 
         if actor_id is not None:
-            items = [audit_log for audit_log in items if audit_log.actor_id == actor_id]
+            items = [
+                audit_log
+                for audit_log in items
+                if audit_log.actor_id == actor_id
+            ]
 
         if action is not None:
-            items = [audit_log for audit_log in items if audit_log.action == action]
+            items = [
+                audit_log
+                for audit_log in items
+                if audit_log.action == action
+            ]
 
         if resource_type is not None:
-            items = [audit_log for audit_log in items if audit_log.resource_type == resource_type]
+            items = [
+                audit_log
+                for audit_log in items
+                if audit_log.resource_type == resource_type
+            ]
 
         if resource_id is not None:
-            items = [audit_log for audit_log in items if audit_log.resource_id == resource_id]
+            items = [
+                audit_log
+                for audit_log in items
+                if audit_log.resource_id == resource_id
+            ]
 
         if occurred_from is not None:
-            items = [audit_log for audit_log in items if audit_log.occurred_at >= occurred_from]
+            items = [
+                audit_log
+                for audit_log in items
+                if audit_log.occurred_at >= occurred_from
+            ]
 
         if occurred_to is not None:
-            items = [audit_log for audit_log in items if audit_log.occurred_at <= occurred_to]
+            items = [
+                audit_log
+                for audit_log in items
+                if audit_log.occurred_at <= occurred_to
+            ]
 
         return items[offset : offset + limit]
 
@@ -260,6 +320,7 @@ class FakeUnitOfWork:
         self.shipments = FakeShipmentRepository()
         self.customers = FakeCustomerRepository()
         self.locations = FakeLocationRepository()
+        self.shipment_events = FakeShipmentEventRepository()
         self.audit_logs = FakeAuditLogRepository()
 
         self.flushed = False
@@ -267,7 +328,9 @@ class FakeUnitOfWork:
         self.rolled_back = False
         self.refreshed = False
 
-    async def __aenter__(self) -> "FakeUnitOfWork":
+    async def __aenter__(
+        self,
+    ) -> "FakeUnitOfWork":
         return self
 
     async def __aexit__(
@@ -283,7 +346,11 @@ class FakeUnitOfWork:
         self.flushed = True
 
         for shipment in self.shipments.items:
-            if getattr(shipment, "id", None) is None:
+            if getattr(
+                shipment,
+                "id",
+                None,
+            ) is None:
                 shipment.id = uuid4()
 
     async def commit(self) -> None:
@@ -297,3 +364,4 @@ class FakeUnitOfWork:
         shipment: Shipment,
     ) -> None:
         self.refreshed = True
+        
