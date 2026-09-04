@@ -7,6 +7,10 @@ from app.modules.audit.application.use_cases.record_audit_log import (
     RecordAuditLogUseCase,
 )
 from app.modules.audit.domain.enums import AuditActorType, AuditOutcome
+from app.modules.shipment_events.domain.enums import ShipmentEventType
+from app.modules.shipment_events.infrastructure.models.shipment_event import (
+    ShipmentEvent,
+)
 from app.modules.shipments.application.exceptions import (
     InvalidShipmentStatusTransitionError,
     ShipmentNotFoundError,
@@ -47,7 +51,9 @@ class TransitionShipmentStatus:
             if shipment is None:
                 raise ShipmentNotFoundError
 
-            previous_status = ShipmentStatus(shipment.status)
+            previous_status = ShipmentStatus(
+                shipment.status,
+            )
 
             if not can_transition_shipment_status(
                 previous_status,
@@ -58,6 +64,29 @@ class TransitionShipmentStatus:
             occurred_at = datetime.now(UTC)
 
             shipment.status = command.target_status
+
+            shipment_event = ShipmentEvent(
+                tenant_id=command.tenant_id,
+                shipment_id=shipment.id,
+                event_type=ShipmentEventType.STATUS_CHANGED,
+                status=command.target_status,
+                location_id=None,
+                description=(
+                    f"Shipment status changed from "
+                    f"{previous_status.value} to "
+                    f"{command.target_status.value}"
+                ),
+                occurred_at=occurred_at,
+                metadata_={
+                    "previous_status": previous_status.value,
+                    "new_status": command.target_status.value,
+                },
+                created_by_user_id=command.actor_id,
+            )
+
+            uow.shipment_events.add(
+                shipment_event,
+            )
 
             await uow.flush()
 

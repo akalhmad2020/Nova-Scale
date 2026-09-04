@@ -8,6 +8,9 @@ from app.modules.customers.application.ports.customer_repository import (
 from app.modules.locations.application.ports.location_repository import (
     LocationRepository,
 )
+from app.modules.shipment_events.application.ports.shipment_event_repository import (
+    ShipmentEventRepository,
+)
 from app.modules.shipments.application.ports.shipment_repository import (
     ShipmentRepository,
 )
@@ -23,6 +26,9 @@ class UnitOfWork(Protocol):
 
     @property
     def locations(self) -> LocationRepository: ...
+
+    @property
+    def shipment_events(self) -> ShipmentEventRepository: ...
 
     @property
     def audit_logs(self) -> AuditLogRepository: ...

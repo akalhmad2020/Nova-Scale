@@ -6,6 +6,9 @@ from uuid import UUID, uuid4
 from app.modules.audit.infrastructure.models.audit_log import AuditLog
 from app.modules.customers.infrastructure.models.customer import Customer
 from app.modules.locations.infrastructure.models.location import Location
+from app.modules.shipment_events.infrastructure.models.shipment_event import (
+    ShipmentEvent,
+)
 from app.modules.shipments.infrastructure.models.shipment import Shipment
 
 
@@ -194,6 +197,28 @@ class FakeLocationRepository:
         self.items.append(location)
 
 
+class FakeShipmentEventRepository:
+    def __init__(self) -> None:
+        self.items: list[ShipmentEvent] = []
+
+    async def list_by_shipment(
+        self,
+        shipment_id: UUID,
+        tenant_id: UUID,
+    ) -> list[ShipmentEvent]:
+        return [
+            event
+            for event in self.items
+            if event.shipment_id == shipment_id and event.tenant_id == tenant_id
+        ]
+
+    def add(
+        self,
+        event: ShipmentEvent,
+    ) -> None:
+        self.items.append(event)
+
+
 class FakeAuditLogRepository:
     def __init__(self) -> None:
         self.items: list[AuditLog] = []
@@ -260,6 +285,7 @@ class FakeUnitOfWork:
         self.shipments = FakeShipmentRepository()
         self.customers = FakeCustomerRepository()
         self.locations = FakeLocationRepository()
+        self.shipment_events = FakeShipmentEventRepository()
         self.audit_logs = FakeAuditLogRepository()
 
         self.flushed = False
@@ -267,7 +293,9 @@ class FakeUnitOfWork:
         self.rolled_back = False
         self.refreshed = False
 
-    async def __aenter__(self) -> "FakeUnitOfWork":
+    async def __aenter__(
+        self,
+    ) -> "FakeUnitOfWork":
         return self
 
     async def __aexit__(
@@ -283,7 +311,14 @@ class FakeUnitOfWork:
         self.flushed = True
 
         for shipment in self.shipments.items:
-            if getattr(shipment, "id", None) is None:
+            if (
+                getattr(
+                    shipment,
+                    "id",
+                    None,
+                )
+                is None
+            ):
                 shipment.id = uuid4()
 
     async def commit(self) -> None:

@@ -8,6 +8,7 @@ from app.modules.billing.api.dependencies import (
     get_create_invoice_use_case,
     get_get_invoice_use_case,
     get_issue_invoice_use_case,
+    get_list_invoice_lines_use_case,
     get_list_invoices_use_case,
     get_remove_invoice_line_use_case,
     get_void_invoice_use_case,
@@ -41,6 +42,9 @@ from app.modules.billing.application.use_cases.get_invoice import (
 )
 from app.modules.billing.application.use_cases.issue_invoice import (
     IssueInvoiceUseCase,
+)
+from app.modules.billing.application.use_cases.list_invoice_lines import (
+    ListInvoiceLinesUseCase,
 )
 from app.modules.billing.application.use_cases.list_invoices import (
     ListInvoicesUseCase,
@@ -354,3 +358,35 @@ async def void_invoice(
         ) from exc
 
     return InvoiceResponse.model_validate(invoice)
+
+
+@router.get(
+    "/invoices/{invoice_id}/lines",
+    response_model=list[InvoiceLineResponse],
+)
+async def list_invoice_lines(
+    tenant_id: UUID,
+    invoice_id: UUID,
+    membership: Annotated[
+        Membership,
+        Depends(require_permission(Permissions.INVOICE_READ)),
+    ],
+    use_case: Annotated[
+        ListInvoiceLinesUseCase,
+        Depends(get_list_invoice_lines_use_case),
+    ],
+) -> list[InvoiceLineResponse]:
+    del membership
+
+    try:
+        invoice_lines = await use_case.execute(
+            tenant_id=tenant_id,
+            invoice_id=invoice_id,
+        )
+    except InvoiceNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invoice not found",
+        ) from exc
+
+    return [InvoiceLineResponse.model_validate(invoice_line) for invoice_line in invoice_lines]

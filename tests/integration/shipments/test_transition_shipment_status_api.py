@@ -39,6 +39,9 @@ from app.modules.locations.domain.enums import (
     LocationType,
 )
 from app.modules.locations.infrastructure.models.location import Location
+from app.modules.shipment_events.infrastructure.models.shipment_event import (
+    ShipmentEvent,
+)
 from app.modules.shipments.domain.enums import (
     ServiceType,
     ShipmentStatus,
@@ -99,6 +102,12 @@ async def cleanup_test_data(
                 )
 
                 await session.execute(
+                    delete(ShipmentEvent).where(
+                        ShipmentEvent.tenant_id.in_(tenant_ids),
+                    )
+                )
+
+                await session.execute(
                     delete(Shipment).where(
                         Shipment.tenant_id.in_(tenant_ids),
                     )
@@ -115,7 +124,6 @@ async def cleanup_test_data(
                         Location.tenant_id.in_(tenant_ids),
                     )
                 )
-
             if user_id is not None:
                 await session.execute(
                     delete(AuthSession).where(

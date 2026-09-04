@@ -11,6 +11,9 @@ from app.modules.customers.infrastructure.repositories.customer_repository impor
 from app.modules.locations.infrastructure.repositories.location_repository import (
     LocationRepository,
 )
+from app.modules.shipment_events.infrastructure.repositories.shipment_event_repository import (
+    ShipmentEventRepository,
+)
 from app.modules.shipments.infrastructure.models.shipment import Shipment
 from app.modules.shipments.infrastructure.repositories.shipment_repository import (
     ShipmentRepository,
@@ -28,6 +31,7 @@ class SQLAlchemyUnitOfWork:
         self.shipments: ShipmentRepository
         self.customers: CustomerRepository
         self.locations: LocationRepository
+        self.shipment_events: ShipmentEventRepository
         self.audit_logs: SQLAlchemyAuditLogRepository
 
     async def __aenter__(self) -> "SQLAlchemyUnitOfWork":
@@ -36,6 +40,7 @@ class SQLAlchemyUnitOfWork:
         self.shipments = ShipmentRepository(self._session)
         self.customers = CustomerRepository(self._session)
         self.locations = LocationRepository(self._session)
+        self.shipment_events = ShipmentEventRepository(self._session)
         self.audit_logs = SQLAlchemyAuditLogRepository(self._session)
 
         return self
