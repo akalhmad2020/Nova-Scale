@@ -57,6 +57,7 @@ from app.modules.identity.application.use_cases.suspend_membership import (
     SuspendMembership,
     SuspendMembershipCommand,
 )
+from app.modules.identity.domain.enums import InvitationStatus
 from app.modules.identity.domain.permissions import Permissions
 from app.modules.identity.infrastructure.models.membership import Membership
 from app.modules.identity.infrastructure.models.user import User
@@ -155,7 +156,7 @@ async def invite_member(
     ],
 ) -> InvitationResponse:
     try:
-        invitation = await use_case.execute(
+        result = await use_case.execute(
             InviteMemberCommand(
                 tenant_id=tenant_id,
                 email=str(request.email),
@@ -178,7 +179,15 @@ async def invite_member(
             detail="Role not found",
         ) from exc
 
-    return InvitationResponse.model_validate(invitation)
+    return InvitationResponse(
+        id=result.invitation_id,
+        tenant_id=result.tenant_id,
+        role_id=result.role_id,
+        email=result.email,
+        status=InvitationStatus.PENDING,
+        expires_at=result.expires_at,
+        accepted_at=None,
+    )
 
 
 @router.get(

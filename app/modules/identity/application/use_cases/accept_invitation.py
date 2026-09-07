@@ -9,6 +9,9 @@ from app.modules.identity.application.exceptions import (
     InvitationNotPendingError,
     UserAlreadyMemberError,
 )
+from app.modules.identity.application.ports.invitation_token_service import (
+    InvitationTokenService,
+)
 from app.modules.identity.application.ports.unit_of_work import UnitOfWork
 from app.modules.identity.domain.enums import (
     InvitationStatus,
@@ -19,7 +22,7 @@ from app.modules.identity.infrastructure.models.membership import Membership
 
 @dataclass(frozen=True, slots=True)
 class AcceptInvitationCommand:
-    invitation_id: UUID
+    token: str
     user_id: UUID
     user_email: str
 
@@ -28,18 +31,21 @@ class AcceptInvitation:
     def __init__(
         self,
         unit_of_work: UnitOfWork,
+        invitation_token_service: InvitationTokenService,
     ) -> None:
         self._unit_of_work = unit_of_work
+        self._invitation_token_service = invitation_token_service
 
     async def execute(
         self,
         command: AcceptInvitationCommand,
     ) -> Membership:
         user_email = command.user_email.strip().lower()
+        token_hash = self._invitation_token_service.hash_token(command.token)
         now = datetime.now(UTC)
 
         async with self._unit_of_work as uow:
-            invitation = await uow.invitations.get_by_id(command.invitation_id)
+            invitation = await uow.invitations.get_by_token_hash(token_hash)
 
             if invitation is None:
                 raise InvitationNotFoundError

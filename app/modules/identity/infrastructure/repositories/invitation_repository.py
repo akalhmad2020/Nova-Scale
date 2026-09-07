@@ -26,6 +26,18 @@ class InvitationRepository:
 
         return result.scalar_one_or_none()
 
+    async def get_by_token_hash(
+        self,
+        token_hash: str,
+    ) -> Invitation | None:
+        statement = select(Invitation).where(
+            Invitation.token_hash == token_hash,
+        )
+
+        result = await self._session.execute(statement)
+
+        return result.scalar_one_or_none()
+
     async def get_pending_by_email_and_tenant(
         self,
         email: str,

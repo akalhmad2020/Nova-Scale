@@ -105,6 +105,13 @@ class InviteMemberRequest(BaseModel):
     role_id: UUID
 
 
+class AcceptInvitationRequest(BaseModel):
+    token: str = Field(
+        min_length=1,
+        max_length=512,
+    )
+
+
 class InvitationResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

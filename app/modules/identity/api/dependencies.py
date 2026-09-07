@@ -36,6 +36,9 @@ from app.modules.identity.application.use_cases.suspend_membership import (
 from app.modules.identity.infrastructure.security.access_token_service import (
     JWTAccessTokenService,
 )
+from app.modules.identity.infrastructure.security.invitation_token_service import (
+    SecureInvitationTokenService,
+)
 from app.modules.identity.infrastructure.security.password_hasher import (
     Argon2PasswordHasher,
 )
@@ -81,13 +84,14 @@ def get_register_company_use_case() -> RegisterCompany:
 def get_accept_invitation_use_case() -> AcceptInvitation:
     return AcceptInvitation(
         unit_of_work=SQLAlchemyUnitOfWork(SessionFactory),
+        invitation_token_service=SecureInvitationTokenService(),
     )
 
 
 def get_invite_member_use_case() -> InviteMember:
     return InviteMember(
         unit_of_work=SQLAlchemyUnitOfWork(SessionFactory),
-        invitation_ttl_days=7,
+        invitation_token_service=SecureInvitationTokenService(),
     )
 
 

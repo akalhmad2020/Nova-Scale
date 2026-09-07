@@ -1,5 +1,4 @@
 from typing import Annotated
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -7,7 +6,10 @@ from app.modules.identity.api.auth_dependencies import get_current_user
 from app.modules.identity.api.dependencies import (
     get_accept_invitation_use_case,
 )
-from app.modules.identity.api.schemas import MembershipResponse
+from app.modules.identity.api.schemas import (
+    AcceptInvitationRequest,
+    MembershipResponse,
+)
 from app.modules.identity.application.exceptions import (
     InvitationEmailMismatchError,
     InvitationExpiredError,
@@ -28,12 +30,12 @@ router = APIRouter(
 
 
 @router.post(
-    "/{invitation_id}/accept",
+    "/accept",
     response_model=MembershipResponse,
     status_code=status.HTTP_200_OK,
 )
 async def accept_invitation(
-    invitation_id: UUID,
+    request: AcceptInvitationRequest,
     current_user: Annotated[
         User,
         Depends(get_current_user),
@@ -46,7 +48,7 @@ async def accept_invitation(
     try:
         membership = await use_case.execute(
             AcceptInvitationCommand(
-                invitation_id=invitation_id,
+                token=request.token,
                 user_id=current_user.id,
                 user_email=current_user.email,
             )

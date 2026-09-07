@@ -1,7 +1,14 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, text
+from sqlalchemy import (
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -22,6 +29,10 @@ class Invitation(
     __tablename__ = "invitations"
 
     __table_args__ = (
+        UniqueConstraint(
+            "token_hash",
+            name="uq_invitations_token_hash",
+        ),
         Index(
             "uq_invitations_pending_tenant_email",
             "tenant_id",
@@ -59,6 +70,11 @@ class Invitation(
 
     email: Mapped[str] = mapped_column(
         String(320),
+        nullable=False,
+    )
+
+    token_hash: Mapped[str] = mapped_column(
+        String(64),
         nullable=False,
     )
 

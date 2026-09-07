@@ -7,6 +7,9 @@ from app.modules.identity.application.exceptions import (
     RoleNotFoundError,
     UserAlreadyMemberError,
 )
+from app.modules.identity.application.ports.invitation_token_service import (
+    InvitationTokenService,
+)
 from app.modules.identity.application.ports.unit_of_work import UnitOfWork
 from app.modules.identity.domain.enums import InvitationStatus
 from app.modules.identity.infrastructure.models.invitation import Invitation
@@ -19,19 +22,31 @@ class InviteMemberCommand:
     role_id: UUID
 
 
+@dataclass(frozen=True, slots=True)
+class InviteMemberResult:
+    invitation_id: UUID
+    email: str
+    tenant_id: UUID
+    role_id: UUID
+    expires_at: datetime
+    token: str
+
+
 class InviteMember:
     def __init__(
         self,
         unit_of_work: UnitOfWork,
+        invitation_token_service: InvitationTokenService,
         invitation_ttl_days: int = 7,
     ) -> None:
         self._unit_of_work = unit_of_work
+        self._invitation_token_service = invitation_token_service
         self._invitation_ttl_days = invitation_ttl_days
 
     async def execute(
         self,
         command: InviteMemberCommand,
-    ) -> Invitation:
+    ) -> InviteMemberResult:
         email = command.email.strip().lower()
 
         async with self._unit_of_work as uow:
@@ -59,10 +74,14 @@ class InviteMember:
             if pending_invitation is not None:
                 raise InvitationAlreadyPendingError
 
+            token = self._invitation_token_service.generate_token()
+            token_hash = self._invitation_token_service.hash_token(token)
+
             invitation = Invitation(
                 tenant_id=command.tenant_id,
                 role_id=command.role_id,
                 email=email,
+                token_hash=token_hash,
                 status=InvitationStatus.PENDING,
                 expires_at=datetime.now(UTC) + timedelta(days=self._invitation_ttl_days),
             )
@@ -72,4 +91,11 @@ class InviteMember:
             await uow.flush()
             await uow.commit()
 
-            return invitation
+            return InviteMemberResult(
+                invitation_id=invitation.id,
+                email=invitation.email,
+                tenant_id=invitation.tenant_id,
+                role_id=invitation.role_id,
+                expires_at=invitation.expires_at,
+                token=token,
+            )
