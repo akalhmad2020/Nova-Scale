@@ -9,7 +9,6 @@ from app.modules.identity.application.use_cases.change_member_role import (
 from app.modules.identity.application.use_cases.check_permission import (
     CheckPermission,
 )
-from app.modules.identity.application.use_cases.create_tenant import CreateTenant
 from app.modules.identity.application.use_cases.get_active_membership import (
     GetActiveMembership,
 )
@@ -25,7 +24,9 @@ from app.modules.identity.application.use_cases.logout_user import LogoutUser
 from app.modules.identity.application.use_cases.refresh_session import (
     RefreshSession,
 )
-from app.modules.identity.application.use_cases.register_user import RegisterUser
+from app.modules.identity.application.use_cases.register_company import (
+    RegisterCompany,
+)
 from app.modules.identity.application.use_cases.remove_membership import (
     RemoveMembership,
 )
@@ -70,13 +71,10 @@ def get_list_tenant_members_use_case() -> ListTenantMembers:
     )
 
 
-def get_register_user_use_case() -> RegisterUser:
-    unit_of_work = SQLAlchemyUnitOfWork(SessionFactory)
-    password_hasher = Argon2PasswordHasher()
-
-    return RegisterUser(
-        unit_of_work=unit_of_work,
-        password_hasher=password_hasher,
+def get_register_company_use_case() -> RegisterCompany:
+    return RegisterCompany(
+        unit_of_work=SQLAlchemyUnitOfWork(SessionFactory),
+        password_hasher=Argon2PasswordHasher(),
     )
 
 
@@ -160,12 +158,6 @@ def get_active_membership_use_case() -> GetActiveMembership:
 
 def get_check_permission_use_case() -> CheckPermission:
     return CheckPermission(
-        unit_of_work=SQLAlchemyUnitOfWork(SessionFactory),
-    )
-
-
-def get_create_tenant_use_case() -> CreateTenant:
-    return CreateTenant(
         unit_of_work=SQLAlchemyUnitOfWork(SessionFactory),
     )
 
