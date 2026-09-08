@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+import app.core.database  # noqa: F401
 from app.ai.application.services.retrieve_context import RetrieveContextService
 from app.ai.infrastructure.dependencies import build_embedding_provider
 from app.ai.infrastructure.vector_store.models import RagChunkModel
@@ -14,6 +15,7 @@ from app.ai.infrastructure.vector_store.postgres_vector_store import (
     PostgresVectorStore,
 )
 from app.core.config import get_settings
+from app.core.tenant_context import reset_current_tenant_id, set_current_tenant_id
 from app.modules.customers.domain.enums import CustomerStatus
 from app.modules.customers.infrastructure.models.customer import Customer
 from app.modules.documents.application.events import DOCUMENT_READY_EVENT_TYPE
@@ -40,6 +42,7 @@ from app.shared.outbox.infrastructure.models.outbox_message import OutboxMessage
 from app.shared.outbox.infrastructure.runtime import (
     build_outbox_processing_service,
 )
+from tests.integration.rls import set_session_tenant_context
 
 pytestmark = [
     pytest.mark.integration,
@@ -63,6 +66,8 @@ async def create_ready_document_and_outbox_message(
 
         session.add(tenant)
         await session.flush()
+
+        await set_session_tenant_context(session, tenant.id)
 
         customer = Customer(
             tenant_id=tenant.id,
@@ -189,13 +194,19 @@ async def test_document_ready_outbox_indexes_stored_document(
 
         now = datetime.now(UTC)
 
-        processed_count = await service.process_batch(
-            now=now,
-        )
+        tenant_context_token = set_current_tenant_id(tenant_id)
+        try:
+            processed_count = await service.process_batch(
+                now=now,
+            )
+        finally:
+            reset_current_tenant_id(tenant_context_token)
 
         assert processed_count == 1
 
         async with session_factory() as session:
+            await set_session_tenant_context(session, tenant_id)
+
             message = await session.get(
                 OutboxMessage,
                 message_id,
@@ -226,6 +237,8 @@ async def test_document_ready_outbox_indexes_stored_document(
         embedding_provider = build_embedding_provider(settings)
 
         async with session_factory() as session:
+            await set_session_tenant_context(session, tenant_id)
+
             vector_store = PostgresVectorStore(
                 session=session,
             )

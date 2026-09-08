@@ -2,16 +2,19 @@ import pytest
 
 from app.ai.domain.models import LLMMessage, LLMRequest
 from app.ai.infrastructure.llm.ollama_provider import OllamaLLMProvider
+from app.core.config import get_settings
 
 
 @pytest.mark.integration
 @pytest.mark.external_ai
 @pytest.mark.asyncio
 async def test_ollama_provider_generates_response() -> None:
+    settings = get_settings()
+
     provider = OllamaLLMProvider(
-        base_url="http://host.docker.internal:11434",
-        model="qwen2.5:3b",
-        timeout_seconds=180.0,
+        base_url=settings.ai_ollama_base_url,
+        model=settings.ai_ollama_model,
+        timeout_seconds=settings.ai_ollama_timeout_seconds,
     )
 
     response = await provider.generate(
@@ -27,4 +30,4 @@ async def test_ollama_provider_generates_response() -> None:
     )
 
     assert response.content.strip()
-    assert response.model == "qwen2.5:3b"
+    assert response.model == settings.ai_ollama_model

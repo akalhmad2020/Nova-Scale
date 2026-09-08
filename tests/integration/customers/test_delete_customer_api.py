@@ -31,6 +31,7 @@ from app.modules.identity.infrastructure.models.user import User
 from app.modules.identity.infrastructure.security.password_hasher import (
     Argon2PasswordHasher,
 )
+from tests.integration.rls import set_session_tenant_context
 
 
 async def cleanup_test_data(
@@ -62,6 +63,7 @@ async def cleanup_test_data(
             role_id = await session.scalar(select(Role.id).where(Role.name == role_name))
 
             if tenant_id is not None:
+                await set_session_tenant_context(session, tenant_id)
                 await session.execute(delete(Customer).where(Customer.tenant_id == tenant_id))
 
             if user_id is not None:
@@ -158,6 +160,8 @@ async def create_delete_context(
 
             await session.flush()
 
+            await set_session_tenant_context(session, tenant.id)
+
             session.add(
                 Membership(
                     tenant_id=tenant.id,
@@ -205,6 +209,8 @@ async def create_customer(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(session, tenant_id)
+
             customer = Customer(
                 tenant_id=tenant_id,
                 name=name,
@@ -222,6 +228,8 @@ async def create_customer(
 
 
 async def get_customer_raw(
+    *,
+    tenant_id: UUID,
     customer_id: UUID,
 ) -> Customer | None:
     settings = get_settings()
@@ -240,6 +248,8 @@ async def get_customer_raw(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(session, tenant_id)
+
             customer = await session.get(
                 Customer,
                 customer_id,
@@ -314,7 +324,7 @@ async def test_delete_customer_endpoint_soft_deletes_customer() -> None:
         assert response.status_code == 204
         assert response.content == b""
 
-        stored = await get_customer_raw(customer.id)
+        stored = await get_customer_raw(tenant_id=customer.tenant_id, customer_id=customer.id)
 
         assert stored is not None
         assert stored.deleted_at is not None
@@ -367,7 +377,7 @@ async def test_delete_customer_endpoint_requires_permission() -> None:
         assert response.status_code == 403
         assert response.json() == {"detail": "Permission denied"}
 
-        stored = await get_customer_raw(customer.id)
+        stored = await get_customer_raw(tenant_id=customer.tenant_id, customer_id=customer.id)
 
         assert stored is not None
         assert stored.deleted_at is None
@@ -476,7 +486,9 @@ async def test_delete_customer_endpoint_rejects_customer_from_other_tenant() -> 
         assert response.status_code == 404
         assert response.json() == {"detail": "Customer not found"}
 
-        stored = await get_customer_raw(foreign_customer.id)
+        stored = await get_customer_raw(
+            tenant_id=foreign_customer.tenant_id, customer_id=foreign_customer.id
+        )
 
         assert stored is not None
         assert stored.deleted_at is None

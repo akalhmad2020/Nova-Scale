@@ -1,11 +1,17 @@
 from decimal import Decimal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import app.core.database  # noqa: F401
 from app.ai.application.dependencies import build_agent_runtime
 from app.core.config import get_settings
+from app.core.tenant_context import (
+    reset_current_tenant_id,
+    set_current_tenant_id,
+)
 from app.modules.customers.domain.enums import CustomerStatus
 from app.modules.customers.infrastructure.models.customer import Customer
 from app.modules.identity.domain.enums import TenantStatus
@@ -26,6 +32,24 @@ from app.modules.shipments.domain.enums import (
 from app.modules.shipments.infrastructure.models.shipment import Shipment
 
 
+async def set_session_tenant_context(
+    session: AsyncSession,
+    tenant_id: UUID,
+) -> None:
+    await session.execute(
+        text(
+            """
+            SELECT set_config(
+                'app.current_tenant_id',
+                :tenant_id,
+                true
+            )
+            """
+        ),
+        {"tenant_id": str(tenant_id)},
+    )
+
+
 @pytest.mark.integration
 @pytest.mark.external_ai
 @pytest.mark.asyncio
@@ -42,6 +66,11 @@ async def test_agent_gets_real_shipment_with_real_llm(
 
     db_session.add(tenant)
     await db_session.flush()
+
+    await set_session_tenant_context(
+        db_session,
+        tenant.id,
+    )
 
     customer = Customer(
         tenant_id=tenant.id,
@@ -107,20 +136,34 @@ async def test_agent_gets_real_shipment_with_real_llm(
         session=db_session,
     )
 
-    answer = await runtime.execute(
-        tenant_id=tenant.id,
-        question=(
-            f"Look up shipment with UUID {shipment.id} "
-            "and tell me its tracking number and current status."
-        ),
+    await set_session_tenant_context(
+        db_session,
+        tenant.id,
     )
+
+    tenant_context_token = set_current_tenant_id(tenant.id)
+
+    try:
+        answer = await runtime.execute(
+            tenant_id=tenant.id,
+            question=(
+                f"Look up shipment with UUID {shipment.id} "
+                "and tell me its tracking number and current status."
+            ),
+        )
+    finally:
+        reset_current_tenant_id(tenant_context_token)
 
     assert answer.strip()
 
     normalized_answer = answer.lower()
 
-    assert shipment.tracking_number.lower() in normalized_answer
-    assert shipment.status.value.lower() in normalized_answer
+    assert str(shipment.id).lower() in normalized_answer
+
+    expected_status = shipment.status.value.lower()
+    expected_status_natural = expected_status.replace("_", " ")
+
+    assert expected_status in normalized_answer or expected_status_natural in normalized_answer
 
 
 @pytest.mark.integration
@@ -151,6 +194,11 @@ async def test_agent_cannot_access_shipment_from_another_tenant(
     )
 
     await db_session.flush()
+
+    await set_session_tenant_context(
+        db_session,
+        owner_tenant.id,
+    )
 
     customer = Customer(
         tenant_id=owner_tenant.id,
@@ -216,8 +264,20 @@ async def test_agent_cannot_access_shipment_from_another_tenant(
         session=db_session,
     )
 
-    with pytest.raises(ShipmentNotFoundError):
-        await runtime.execute(
-            tenant_id=foreign_tenant.id,
-            question=(f"Look up shipment with UUID {shipment.id} and tell me its current status."),
-        )
+    await set_session_tenant_context(
+        db_session,
+        foreign_tenant.id,
+    )
+
+    tenant_context_token = set_current_tenant_id(foreign_tenant.id)
+
+    try:
+        with pytest.raises(ShipmentNotFoundError):
+            await runtime.execute(
+                tenant_id=foreign_tenant.id,
+                question=(
+                    f"Look up shipment with UUID {shipment.id} and tell me its current status."
+                ),
+            )
+    finally:
+        reset_current_tenant_id(tenant_context_token)

@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -48,6 +48,24 @@ from app.modules.payments.infrastructure.models.payment import Payment
 from app.modules.payments.infrastructure.models.payment_allocation import (
     PaymentAllocation,
 )
+
+
+async def set_session_tenant_context(
+    session: AsyncSession,
+    tenant_id: UUID,
+) -> None:
+    await session.execute(
+        text(
+            """
+            SELECT set_config(
+                'app.current_tenant_id',
+                :tenant_id,
+                true
+            )
+            """
+        ),
+        {"tenant_id": str(tenant_id)},
+    )
 
 
 async def cleanup_test_data(
@@ -94,52 +112,57 @@ async def cleanup_test_data(
                 )
             )
 
-            if tenant_ids:
+            for tenant_id in tenant_ids:
+                await set_session_tenant_context(
+                    session,
+                    tenant_id,
+                )
+
                 await session.execute(
                     delete(AuditLog).where(
-                        AuditLog.tenant_id.in_(tenant_ids),
+                        AuditLog.tenant_id == tenant_id,
                     )
                 )
 
                 await session.execute(
                     delete(JournalLine).where(
-                        JournalLine.tenant_id.in_(tenant_ids),
+                        JournalLine.tenant_id == tenant_id,
                     )
                 )
 
                 await session.execute(
                     delete(JournalEntry).where(
-                        JournalEntry.tenant_id.in_(tenant_ids),
+                        JournalEntry.tenant_id == tenant_id,
                     )
                 )
 
                 await session.execute(
                     delete(LedgerAccount).where(
-                        LedgerAccount.tenant_id.in_(tenant_ids),
+                        LedgerAccount.tenant_id == tenant_id,
                     )
                 )
 
                 await session.execute(
                     delete(PaymentAllocation).where(
-                        PaymentAllocation.tenant_id.in_(tenant_ids),
+                        PaymentAllocation.tenant_id == tenant_id,
                     )
                 )
 
                 await session.execute(
                     delete(Payment).where(
-                        Payment.tenant_id.in_(tenant_ids),
+                        Payment.tenant_id == tenant_id,
                     )
                 )
 
                 await session.execute(
                     delete(Invoice).where(
-                        Invoice.tenant_id.in_(tenant_ids),
+                        Invoice.tenant_id == tenant_id,
                     )
                 )
 
                 await session.execute(
                     delete(Customer).where(
-                        Customer.tenant_id.in_(tenant_ids),
+                        Customer.tenant_id == tenant_id,
                     )
                 )
 
@@ -219,6 +242,11 @@ async def create_payment_ledger_accounts(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(
+                session,
+                tenant_id,
+            )
+
             cash = LedgerAccount(
                 tenant_id=tenant_id,
                 code="1000",
@@ -326,6 +354,11 @@ async def create_lifecycle_context(
 
                 permissions.append(permission)
 
+            await set_session_tenant_context(
+                session,
+                tenant.id,
+            )
+
             customer = Customer(
                 tenant_id=tenant.id,
                 name="Payments Lifecycle Customer",
@@ -385,6 +418,11 @@ async def create_payment_with_invoice(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(
+                session,
+                tenant_id,
+            )
+
             invoice = Invoice(
                 tenant_id=tenant_id,
                 customer_id=customer_id,
@@ -439,6 +477,7 @@ async def create_payment_with_invoice(
 
 async def get_payment(
     *,
+    tenant_id: UUID,
     payment_id: UUID,
 ) -> Payment:
     settings = get_settings()
@@ -457,6 +496,11 @@ async def get_payment(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(
+                session,
+                tenant_id,
+            )
+
             payment = await session.get(
                 Payment,
                 payment_id,
@@ -556,6 +600,11 @@ async def test_post_payment_endpoint_posts_draft_payment() -> None:
 
         try:
             async with session_factory() as session:
+                await set_session_tenant_context(
+                    session,
+                    tenant.id,
+                )
+
                 persisted_payment = await session.get(Payment, payment.id)
                 persisted_invoice = await session.get(Invoice, invoice.id)
 
@@ -734,6 +783,11 @@ async def test_void_payment_endpoint_voids_draft_payment() -> None:
 
         try:
             async with session_factory() as session:
+                await set_session_tenant_context(
+                    session,
+                    tenant.id,
+                )
+
                 persisted_payment = await session.get(
                     Payment,
                     payment.id,
@@ -832,6 +886,7 @@ async def test_post_payment_endpoint_rejects_payment_without_allocations() -> No
         assert response.json() == {"detail": "Payment cannot be posted in its current state"}
 
         persisted_payment = await get_payment(
+            tenant_id=tenant.id,
             payment_id=payment.id,
         )
 
@@ -1012,6 +1067,11 @@ async def test_post_partial_payment_keeps_invoice_issued() -> None:
 
         try:
             async with session_factory() as session:
+                await set_session_tenant_context(
+                    session,
+                    tenant.id,
+                )
+
                 persisted_invoice = await session.get(
                     Invoice,
                     invoice.id,
@@ -1069,6 +1129,11 @@ async def test_post_final_payment_marks_invoice_paid() -> None:
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(
+                session,
+                tenant.id,
+            )
+
             invoice = Invoice(
                 tenant_id=tenant.id,
                 customer_id=customer.id,
@@ -1161,6 +1226,11 @@ async def test_post_final_payment_marks_invoice_paid() -> None:
         assert body["posted_at"] is not None
 
         async with session_factory() as session:
+            await set_session_tenant_context(
+                session,
+                tenant.id,
+            )
+
             persisted_invoice = await session.get(
                 Invoice,
                 invoice_id,
@@ -1248,6 +1318,11 @@ async def test_post_payment_rolls_back_when_ledger_account_is_inactive() -> None
 
         try:
             async with session_factory() as session:
+                await set_session_tenant_context(
+                    session,
+                    tenant.id,
+                )
+
                 persisted_payment = await session.get(Payment, payment.id)
                 persisted_invoice = await session.get(Invoice, invoice.id)
 

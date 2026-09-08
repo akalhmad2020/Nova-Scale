@@ -17,6 +17,7 @@ from app.ai.infrastructure.vector_store.postgres_vector_store import (
     PostgresVectorStore,
 )
 from app.core.config import get_settings
+from tests.integration.rls import set_session_tenant_context
 
 
 @pytest.mark.integration
@@ -67,6 +68,8 @@ async def test_rag_pipeline_end_to_end(
         retrieve_context_service=retrieve_context_service,
         generate_text_service=generate_text_service,
     )
+
+    await set_session_tenant_context(db_session, tenant_id)
 
     shipment_chunks = await ingest_document_service.execute(
         tenant_id=tenant_id,

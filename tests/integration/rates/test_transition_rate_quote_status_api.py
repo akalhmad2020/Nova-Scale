@@ -45,6 +45,7 @@ from app.modules.shipments.domain.enums import (
     WeightUnit,
 )
 from app.modules.shipments.infrastructure.models.shipment import Shipment
+from tests.integration.rls import set_session_tenant_context
 
 
 async def cleanup_test_data(
@@ -79,14 +80,32 @@ async def cleanup_test_data(
 
             role_id = await session.scalar(select(Role.id).where(Role.name == role_name))
 
-            if tenant_ids:
-                await session.execute(delete(RateQuote).where(RateQuote.tenant_id.in_(tenant_ids)))
+            for tenant_id in tenant_ids:
+                await set_session_tenant_context(session, tenant_id)
 
-                await session.execute(delete(Shipment).where(Shipment.tenant_id.in_(tenant_ids)))
+                await session.execute(
+                    delete(RateQuote).where(
+                        RateQuote.tenant_id == tenant_id,
+                    )
+                )
 
-                await session.execute(delete(Customer).where(Customer.tenant_id.in_(tenant_ids)))
+                await session.execute(
+                    delete(Shipment).where(
+                        Shipment.tenant_id == tenant_id,
+                    )
+                )
 
-                await session.execute(delete(Location).where(Location.tenant_id.in_(tenant_ids)))
+                await session.execute(
+                    delete(Customer).where(
+                        Customer.tenant_id == tenant_id,
+                    )
+                )
+
+                await session.execute(
+                    delete(Location).where(
+                        Location.tenant_id == tenant_id,
+                    )
+                )
 
             if user_id is not None:
                 await session.execute(delete(AuthSession).where(AuthSession.user_id == user_id))
@@ -183,6 +202,8 @@ async def create_manage_context(
             )
 
             await session.flush()
+
+            await set_session_tenant_context(session, tenant.id)
 
             customer = Customer(
                 tenant_id=tenant.id,
@@ -291,6 +312,8 @@ async def create_foreign_context(
             session.add(tenant)
             await session.flush()
 
+            await set_session_tenant_context(session, tenant.id)
+
             customer = Customer(
                 tenant_id=tenant.id,
                 name="Foreign Rate Manage Customer",
@@ -387,6 +410,8 @@ async def create_rate_quote(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(session, tenant_id)
+
             rate_quote = RateQuote(
                 tenant_id=tenant_id,
                 shipment_id=shipment_id,
@@ -408,6 +433,8 @@ async def create_rate_quote(
 
 
 async def get_rate_quote_raw(
+    *,
+    tenant_id: UUID,
     rate_quote_id: UUID,
 ) -> RateQuote | None:
     settings = get_settings()
@@ -426,6 +453,8 @@ async def get_rate_quote_raw(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(session, tenant_id)
+
             return await session.get(
                 RateQuote,
                 rate_quote_id,
@@ -500,7 +529,10 @@ async def test_transition_rate_quote_endpoint_moves_draft_to_quoted() -> None:
         assert response.status_code == 200
         assert response.json()["status"] == "quoted"
 
-        stored = await get_rate_quote_raw(quote.id)
+        stored = await get_rate_quote_raw(
+            tenant_id=quote.tenant_id,
+            rate_quote_id=quote.id,
+        )
 
         assert stored is not None
         assert stored.status == RateQuoteStatus.QUOTED
@@ -556,7 +588,10 @@ async def test_transition_rate_quote_endpoint_moves_quoted_to_accepted() -> None
         assert response.status_code == 200
         assert response.json()["status"] == "accepted"
 
-        stored = await get_rate_quote_raw(quote.id)
+        stored = await get_rate_quote_raw(
+            tenant_id=quote.tenant_id,
+            rate_quote_id=quote.id,
+        )
 
         assert stored is not None
         assert stored.status == RateQuoteStatus.ACCEPTED
@@ -612,7 +647,10 @@ async def test_transition_rate_quote_endpoint_rejects_invalid_transition() -> No
         assert response.status_code == 409
         assert response.json() == {"detail": "Invalid rate quote status transition"}
 
-        stored = await get_rate_quote_raw(quote.id)
+        stored = await get_rate_quote_raw(
+            tenant_id=quote.tenant_id,
+            rate_quote_id=quote.id,
+        )
 
         assert stored is not None
         assert stored.status == RateQuoteStatus.DRAFT
@@ -668,7 +706,10 @@ async def test_transition_rate_quote_endpoint_requires_permission() -> None:
         assert response.status_code == 403
         assert response.json() == {"detail": "Permission denied"}
 
-        stored = await get_rate_quote_raw(quote.id)
+        stored = await get_rate_quote_raw(
+            tenant_id=quote.tenant_id,
+            rate_quote_id=quote.id,
+        )
 
         assert stored is not None
         assert stored.status == RateQuoteStatus.DRAFT
@@ -769,7 +810,10 @@ async def test_transition_rate_quote_endpoint_rejects_foreign_quote() -> None:
         assert response.status_code == 404
         assert response.json() == {"detail": "Rate quote not found"}
 
-        stored = await get_rate_quote_raw(foreign_quote.id)
+        stored = await get_rate_quote_raw(
+            tenant_id=foreign_quote.tenant_id,
+            rate_quote_id=foreign_quote.id,
+        )
 
         assert stored is not None
         assert stored.status == RateQuoteStatus.DRAFT

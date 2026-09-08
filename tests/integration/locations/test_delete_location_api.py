@@ -34,6 +34,7 @@ from app.modules.locations.domain.enums import (
     LocationType,
 )
 from app.modules.locations.infrastructure.models.location import Location
+from tests.integration.rls import set_session_tenant_context
 
 
 async def cleanup_test_data(
@@ -65,6 +66,7 @@ async def cleanup_test_data(
             role_id = await session.scalar(select(Role.id).where(Role.name == role_name))
 
             if tenant_id is not None:
+                await set_session_tenant_context(session, tenant_id)
                 await session.execute(delete(Location).where(Location.tenant_id == tenant_id))
 
             if user_id is not None:
@@ -161,6 +163,8 @@ async def create_delete_context(
 
             await session.flush()
 
+            await set_session_tenant_context(session, tenant.id)
+
             session.add(
                 Membership(
                     tenant_id=tenant.id,
@@ -208,6 +212,8 @@ async def create_location(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(session, tenant_id)
+
             location = Location(
                 tenant_id=tenant_id,
                 name=name,
@@ -229,6 +235,8 @@ async def create_location(
 
 
 async def get_location_raw(
+    *,
+    tenant_id: UUID,
     location_id: UUID,
 ) -> Location | None:
     settings = get_settings()
@@ -247,6 +255,8 @@ async def get_location_raw(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(session, tenant_id)
+
             return await session.get(
                 Location,
                 location_id,
@@ -319,7 +329,7 @@ async def test_delete_location_endpoint_soft_deletes_location() -> None:
         assert response.status_code == 204
         assert response.content == b""
 
-        stored = await get_location_raw(location.id)
+        stored = await get_location_raw(tenant_id=location.tenant_id, location_id=location.id)
 
         assert stored is not None
         assert stored.deleted_at is not None
@@ -372,7 +382,7 @@ async def test_delete_location_endpoint_requires_permission() -> None:
         assert response.status_code == 403
         assert response.json() == {"detail": "Permission denied"}
 
-        stored = await get_location_raw(location.id)
+        stored = await get_location_raw(tenant_id=location.tenant_id, location_id=location.id)
 
         assert stored is not None
         assert stored.deleted_at is None
@@ -480,7 +490,9 @@ async def test_delete_location_endpoint_rejects_other_tenant_location() -> None:
         assert response.status_code == 404
         assert response.json() == {"detail": "Location not found"}
 
-        stored = await get_location_raw(foreign_location.id)
+        stored = await get_location_raw(
+            tenant_id=foreign_location.tenant_id, location_id=foreign_location.id
+        )
 
         assert stored is not None
         assert stored.deleted_at is None

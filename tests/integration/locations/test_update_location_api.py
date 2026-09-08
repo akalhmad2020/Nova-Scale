@@ -27,6 +27,7 @@ from app.modules.identity.infrastructure.models.user import User
 from app.modules.identity.infrastructure.security.password_hasher import Argon2PasswordHasher
 from app.modules.locations.domain.enums import LocationStatus, LocationType
 from app.modules.locations.infrastructure.models.location import Location
+from tests.integration.rls import set_session_tenant_context
 
 
 async def cleanup_test_data(
@@ -52,6 +53,7 @@ async def cleanup_test_data(
             role_id = await session.scalar(select(Role.id).where(Role.name == role_name))
 
             if tenant_id is not None:
+                await set_session_tenant_context(session, tenant_id)
                 await session.execute(delete(Location).where(Location.tenant_id == tenant_id))
 
             if user_id is not None:
@@ -136,6 +138,8 @@ async def create_update_context(
             session.add_all([user, tenant, role])
             await session.flush()
 
+            await set_session_tenant_context(session, tenant.id)
+
             session.add(
                 Membership(
                     tenant_id=tenant.id,
@@ -178,6 +182,8 @@ async def create_location(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(session, tenant_id)
+
             location = Location(
                 tenant_id=tenant_id,
                 name=name,

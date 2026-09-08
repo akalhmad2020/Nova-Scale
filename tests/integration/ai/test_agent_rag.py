@@ -1,8 +1,10 @@
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import app.core.database  # noqa: F401
 from app.ai.application.dependencies import build_agent_runtime
 from app.ai.application.services.chunk_text import ChunkTextService
 from app.ai.application.services.embed_document import EmbedDocumentService
@@ -12,6 +14,28 @@ from app.ai.infrastructure.vector_store.postgres_vector_store import (
     PostgresVectorStore,
 )
 from app.core.config import get_settings
+from app.core.tenant_context import (
+    reset_current_tenant_id,
+    set_current_tenant_id,
+)
+
+
+async def set_session_tenant_context(
+    session: AsyncSession,
+    tenant_id: UUID,
+) -> None:
+    await session.execute(
+        text(
+            """
+            SELECT set_config(
+                'app.current_tenant_id',
+                :tenant_id,
+                true
+            )
+            """
+        ),
+        {"tenant_id": str(tenant_id)},
+    )
 
 
 @pytest.mark.integration
@@ -44,6 +68,11 @@ async def test_agent_answers_from_real_rag_context(
         vector_store=vector_store,
     )
 
+    await set_session_tenant_context(
+        db_session,
+        tenant_id,
+    )
+
     indexed_chunks = await ingest_document_service.execute(
         tenant_id=tenant_id,
         document_id=document_id,
@@ -62,13 +91,23 @@ async def test_agent_answers_from_real_rag_context(
         session=db_session,
     )
 
-    answer = await runtime.execute(
-        tenant_id=tenant_id,
-        question=(
-            "According to our tenant shipping documents, "
-            "within how many hours must damaged cargo be reported?"
-        ),
+    await set_session_tenant_context(
+        db_session,
+        tenant_id,
     )
+
+    tenant_context_token = set_current_tenant_id(tenant_id)
+
+    try:
+        answer = await runtime.execute(
+            tenant_id=tenant_id,
+            question=(
+                "According to our tenant shipping documents, "
+                "within how many hours must damaged cargo be reported?"
+            ),
+        )
+    finally:
+        reset_current_tenant_id(tenant_context_token)
 
     assert answer.strip()
 
@@ -108,6 +147,11 @@ async def test_agent_rag_cannot_retrieve_context_from_another_tenant(
         vector_store=vector_store,
     )
 
+    await set_session_tenant_context(
+        db_session,
+        owner_tenant_id,
+    )
+
     indexed_chunks = await ingest_document_service.execute(
         tenant_id=owner_tenant_id,
         document_id=document_id,
@@ -124,13 +168,23 @@ async def test_agent_rag_cannot_retrieve_context_from_another_tenant(
         session=db_session,
     )
 
-    answer = await runtime.execute(
-        tenant_id=foreign_tenant_id,
-        question=(
-            "According to our tenant documents, "
-            "within how many hours must damaged cargo be reported?"
-        ),
+    await set_session_tenant_context(
+        db_session,
+        foreign_tenant_id,
     )
+
+    tenant_context_token = set_current_tenant_id(foreign_tenant_id)
+
+    try:
+        answer = await runtime.execute(
+            tenant_id=foreign_tenant_id,
+            question=(
+                "According to our tenant documents, "
+                "within how many hours must damaged cargo be reported?"
+            ),
+        )
+    finally:
+        reset_current_tenant_id(tenant_context_token)
 
     assert answer.strip()
 

@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -35,6 +35,24 @@ from app.modules.payments.infrastructure.models.payment import Payment
 from app.modules.payments.infrastructure.models.payment_allocation import (
     PaymentAllocation,
 )
+
+
+async def set_session_tenant_context(
+    session: AsyncSession,
+    tenant_id: UUID,
+) -> None:
+    await session.execute(
+        text(
+            """
+            SELECT set_config(
+                'app.current_tenant_id',
+                :tenant_id,
+                true
+            )
+            """
+        ),
+        {"tenant_id": str(tenant_id)},
+    )
 
 
 async def cleanup_test_data(
@@ -73,28 +91,33 @@ async def cleanup_test_data(
 
             role_id = await session.scalar(select(Role.id).where(Role.name == role_name))
 
-            if tenant_ids:
+            for tenant_id in tenant_ids:
+                await set_session_tenant_context(
+                    session,
+                    tenant_id,
+                )
+
                 await session.execute(
                     delete(PaymentAllocation).where(
-                        PaymentAllocation.tenant_id.in_(tenant_ids),
+                        PaymentAllocation.tenant_id == tenant_id,
                     )
                 )
 
                 await session.execute(
                     delete(Payment).where(
-                        Payment.tenant_id.in_(tenant_ids),
+                        Payment.tenant_id == tenant_id,
                     )
                 )
 
                 await session.execute(
                     delete(Invoice).where(
-                        Invoice.tenant_id.in_(tenant_ids),
+                        Invoice.tenant_id == tenant_id,
                     )
                 )
 
                 await session.execute(
                     delete(Customer).where(
-                        Customer.tenant_id.in_(tenant_ids),
+                        Customer.tenant_id == tenant_id,
                     )
                 )
 
@@ -205,6 +228,11 @@ async def create_allocation_context(
             session.add_all([user, tenant, role])
             await session.flush()
 
+            await set_session_tenant_context(
+                session,
+                tenant.id,
+            )
+
             customer = Customer(
                 tenant_id=tenant.id,
                 name="Payments Allocation Customer",
@@ -262,6 +290,11 @@ async def create_payment_and_invoice(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(
+                session,
+                tenant_id,
+            )
+
             payment = Payment(
                 tenant_id=tenant_id,
                 customer_id=customer_id,
@@ -298,6 +331,7 @@ async def create_payment_and_invoice(
 
 async def get_allocation(
     *,
+    tenant_id: UUID,
     allocation_id: UUID,
 ) -> PaymentAllocation | None:
     settings = get_settings()
@@ -316,6 +350,11 @@ async def get_allocation(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(
+                session,
+                tenant_id,
+            )
+
             return await session.get(
                 PaymentAllocation,
                 allocation_id,
@@ -399,6 +438,7 @@ async def test_add_payment_allocation_endpoint_creates_allocation() -> None:
         assert body["amount"] == "40.00"
 
         allocation = await get_allocation(
+            tenant_id=tenant.id,
             allocation_id=UUID(body["id"]),
         )
 
@@ -472,6 +512,7 @@ async def test_remove_payment_allocation_endpoint_deletes_allocation() -> None:
         assert delete_response.content == b""
 
         allocation = await get_allocation(
+            tenant_id=tenant.id,
             allocation_id=allocation_id,
         )
 
@@ -651,6 +692,11 @@ async def test_add_payment_allocation_rejects_draft_invoice() -> None:
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(
+                session,
+                tenant.id,
+            )
+
             persisted_invoice = await session.get(
                 Invoice,
                 invoice.id,
@@ -732,6 +778,11 @@ async def test_add_payment_allocation_rejects_currency_mismatch() -> None:
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(
+                session,
+                tenant.id,
+            )
+
             persisted_invoice = await session.get(
                 Invoice,
                 invoice.id,
@@ -919,6 +970,11 @@ async def test_add_payment_allocation_rejects_invoice_posted_capacity_exceeded()
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(
+                session,
+                tenant.id,
+            )
+
             posted_payment = Payment(
                 tenant_id=tenant.id,
                 customer_id=customer.id,
@@ -1016,6 +1072,11 @@ async def test_remove_payment_allocation_rejects_posted_payment() -> None:
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(
+                session,
+                tenant.id,
+            )
+
             allocation = PaymentAllocation(
                 tenant_id=tenant.id,
                 payment_id=payment.id,
@@ -1047,6 +1108,7 @@ async def test_remove_payment_allocation_rejects_posted_payment() -> None:
         }
 
         persisted_allocation = await get_allocation(
+            tenant_id=tenant.id,
             allocation_id=allocation_id,
         )
 

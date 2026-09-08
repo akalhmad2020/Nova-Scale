@@ -44,6 +44,7 @@ from app.modules.shipments.domain.enums import (
     WeightUnit,
 )
 from app.modules.shipments.infrastructure.models.shipment import Shipment
+from tests.integration.rls import set_session_tenant_context
 
 
 async def cleanup_test_data(
@@ -78,14 +79,32 @@ async def cleanup_test_data(
 
             role_id = await session.scalar(select(Role.id).where(Role.name == role_name))
 
-            if tenant_ids:
-                await session.execute(delete(Package).where(Package.tenant_id.in_(tenant_ids)))
+            for tenant_id in tenant_ids:
+                await set_session_tenant_context(session, tenant_id)
 
-                await session.execute(delete(Shipment).where(Shipment.tenant_id.in_(tenant_ids)))
+                await session.execute(
+                    delete(Package).where(
+                        Package.tenant_id == tenant_id,
+                    )
+                )
 
-                await session.execute(delete(Customer).where(Customer.tenant_id.in_(tenant_ids)))
+                await session.execute(
+                    delete(Shipment).where(
+                        Shipment.tenant_id == tenant_id,
+                    )
+                )
 
-                await session.execute(delete(Location).where(Location.tenant_id.in_(tenant_ids)))
+                await session.execute(
+                    delete(Customer).where(
+                        Customer.tenant_id == tenant_id,
+                    )
+                )
+
+                await session.execute(
+                    delete(Location).where(
+                        Location.tenant_id == tenant_id,
+                    )
+                )
 
             if user_id is not None:
                 await session.execute(delete(AuthSession).where(AuthSession.user_id == user_id))
@@ -182,6 +201,8 @@ async def create_delete_context(
             )
 
             await session.flush()
+
+            await set_session_tenant_context(session, tenant.id)
 
             customer = Customer(
                 tenant_id=tenant.id,
@@ -293,6 +314,8 @@ async def create_foreign_context(
             session.add(tenant)
             await session.flush()
 
+            await set_session_tenant_context(session, tenant.id)
+
             customer = Customer(
                 tenant_id=tenant.id,
                 name="Foreign Delete Customer",
@@ -390,6 +413,8 @@ async def create_package(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(session, tenant_id)
+
             package = Package(
                 tenant_id=tenant_id,
                 shipment_id=shipment_id,
@@ -410,6 +435,8 @@ async def create_package(
 
 
 async def get_package_raw(
+    *,
+    tenant_id: UUID,
     package_id: UUID,
 ) -> Package | None:
     settings = get_settings()
@@ -428,6 +455,8 @@ async def get_package_raw(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(session, tenant_id)
+
             return await session.get(
                 Package,
                 package_id,
@@ -501,7 +530,8 @@ async def test_delete_package_endpoint_soft_deletes_package() -> None:
         assert response.content == b""
 
         stored = await get_package_raw(
-            package.id,
+            tenant_id=package.tenant_id,
+            package_id=package.id,
         )
 
         assert stored is not None
@@ -556,7 +586,8 @@ async def test_delete_package_endpoint_requires_permission() -> None:
         assert response.json() == {"detail": "Permission denied"}
 
         stored = await get_package_raw(
-            package.id,
+            tenant_id=package.tenant_id,
+            package_id=package.id,
         )
 
         assert stored is not None
@@ -653,7 +684,8 @@ async def test_delete_package_endpoint_rejects_other_tenant_package() -> None:
         assert response.json() == {"detail": "Package not found"}
 
         stored = await get_package_raw(
-            foreign_package.id,
+            tenant_id=foreign_package.tenant_id,
+            package_id=foreign_package.id,
         )
 
         assert stored is not None

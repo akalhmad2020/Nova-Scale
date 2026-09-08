@@ -45,6 +45,7 @@ from app.modules.shipments.domain.enums import (
     WeightUnit,
 )
 from app.modules.shipments.infrastructure.models.shipment import Shipment
+from tests.integration.rls import set_session_tenant_context
 
 
 async def cleanup_test_data(
@@ -79,14 +80,32 @@ async def cleanup_test_data(
 
             role_id = await session.scalar(select(Role.id).where(Role.name == role_name))
 
-            if tenant_ids:
-                await session.execute(delete(RateQuote).where(RateQuote.tenant_id.in_(tenant_ids)))
+            for tenant_id in tenant_ids:
+                await set_session_tenant_context(session, tenant_id)
 
-                await session.execute(delete(Shipment).where(Shipment.tenant_id.in_(tenant_ids)))
+                await session.execute(
+                    delete(RateQuote).where(
+                        RateQuote.tenant_id == tenant_id,
+                    )
+                )
 
-                await session.execute(delete(Customer).where(Customer.tenant_id.in_(tenant_ids)))
+                await session.execute(
+                    delete(Shipment).where(
+                        Shipment.tenant_id == tenant_id,
+                    )
+                )
 
-                await session.execute(delete(Location).where(Location.tenant_id.in_(tenant_ids)))
+                await session.execute(
+                    delete(Customer).where(
+                        Customer.tenant_id == tenant_id,
+                    )
+                )
+
+                await session.execute(
+                    delete(Location).where(
+                        Location.tenant_id == tenant_id,
+                    )
+                )
 
             if user_id is not None:
                 await session.execute(delete(AuthSession).where(AuthSession.user_id == user_id))
@@ -183,6 +202,8 @@ async def create_read_context(
             )
 
             await session.flush()
+
+            await set_session_tenant_context(session, tenant.id)
 
             customer = Customer(
                 tenant_id=tenant.id,
@@ -291,6 +312,8 @@ async def create_foreign_context(
             session.add(tenant)
             await session.flush()
 
+            await set_session_tenant_context(session, tenant.id)
+
             customer = Customer(
                 tenant_id=tenant.id,
                 name="Foreign Rate Read Customer",
@@ -390,6 +413,8 @@ async def create_rate_quote(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(session, tenant_id)
+
             base = Decimal(base_amount)
             surcharge = Decimal(surcharge_amount)
 

@@ -43,6 +43,7 @@ from app.modules.pricing.domain.enums import PricingRuleStatus
 from app.modules.pricing.infrastructure.models import PricingRule
 from app.modules.rates.infrastructure.models.rate_quote import RateQuote
 from app.modules.shipments.infrastructure.models.shipment import Shipment
+from tests.integration.rls import set_session_tenant_context
 
 
 async def cleanup_test_data(
@@ -85,18 +86,38 @@ async def cleanup_test_data(
                 )
             )
 
-            if tenant_ids:
-                await session.execute(delete(RateQuote).where(RateQuote.tenant_id.in_(tenant_ids)))
+            for tenant_id in tenant_ids:
+                await set_session_tenant_context(session, tenant_id)
 
                 await session.execute(
-                    delete(PricingRule).where(PricingRule.tenant_id.in_(tenant_ids))
+                    delete(RateQuote).where(
+                        RateQuote.tenant_id == tenant_id,
+                    )
                 )
 
-                await session.execute(delete(Shipment).where(Shipment.tenant_id.in_(tenant_ids)))
+                await session.execute(
+                    delete(PricingRule).where(
+                        PricingRule.tenant_id == tenant_id,
+                    )
+                )
 
-                await session.execute(delete(Customer).where(Customer.tenant_id.in_(tenant_ids)))
+                await session.execute(
+                    delete(Shipment).where(
+                        Shipment.tenant_id == tenant_id,
+                    )
+                )
 
-                await session.execute(delete(Location).where(Location.tenant_id.in_(tenant_ids)))
+                await session.execute(
+                    delete(Customer).where(
+                        Customer.tenant_id == tenant_id,
+                    )
+                )
+
+                await session.execute(
+                    delete(Location).where(
+                        Location.tenant_id == tenant_id,
+                    )
+                )
 
             if user_id is not None:
                 await session.execute(delete(AuthSession).where(AuthSession.user_id == user_id))
@@ -209,6 +230,8 @@ async def create_pricing_quote_context(
 
             await session.flush()
 
+            await set_session_tenant_context(session, tenant.id)
+
             customer = Customer(
                 tenant_id=tenant.id,
                 name="Pricing Customer",
@@ -305,6 +328,8 @@ async def create_foreign_pricing_rule(
             session.add(tenant)
             await session.flush()
 
+            await set_session_tenant_context(session, tenant.id)
+
             pricing_rule = PricingRule(
                 tenant_id=tenant.id,
                 name="Foreign Pricing Rule",
@@ -329,6 +354,7 @@ async def create_foreign_pricing_rule(
 
 async def deactivate_pricing_rule(
     *,
+    tenant_id: UUID,
     pricing_rule_id: UUID,
 ) -> None:
     settings = get_settings()
@@ -347,6 +373,8 @@ async def deactivate_pricing_rule(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(session, tenant_id)
+
             pricing_rule = await session.get(
                 PricingRule,
                 pricing_rule_id,
@@ -364,6 +392,7 @@ async def deactivate_pricing_rule(
 
 async def get_rate_quote_from_database(
     *,
+    tenant_id: UUID,
     rate_quote_id: UUID,
 ) -> RateQuote | None:
     settings = get_settings()
@@ -382,6 +411,8 @@ async def get_rate_quote_from_database(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(session, tenant_id)
+
             rate_quote = await session.get(
                 RateQuote,
                 rate_quote_id,
@@ -585,6 +616,7 @@ async def test_calculate_rate_quote_endpoint_creates_persisted_quote() -> None:
         rate_quote_id = UUID(body["id"])
 
         persisted = await get_rate_quote_from_database(
+            tenant_id=tenant.id,
             rate_quote_id=rate_quote_id,
         )
 
@@ -821,6 +853,7 @@ async def test_calculate_rate_quote_endpoint_rejects_inactive_pricing_rule() -> 
         pricing_rule_id = UUID(str(pricing_rule["id"]))
 
         await deactivate_pricing_rule(
+            tenant_id=tenant.id,
             pricing_rule_id=pricing_rule_id,
         )
 

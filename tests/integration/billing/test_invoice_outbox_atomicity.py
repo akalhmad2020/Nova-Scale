@@ -1,7 +1,7 @@
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -10,6 +10,10 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
+from app.core.tenant_context import (
+    reset_current_tenant_id,
+    set_current_tenant_id,
+)
 from app.modules.billing.application.use_cases.issue_invoice import (
     INVOICE_ISSUED_EVENT_TYPE,
     IssueInvoiceUseCase,
@@ -41,6 +45,26 @@ from tests.integration.billing.test_invoice_lifecycle_api import (
 pytestmark = pytest.mark.integration
 
 
+async def set_session_tenant_context(
+    session: AsyncSession,
+    tenant_id: UUID,
+) -> None:
+    await session.execute(
+        text(
+            """
+            SELECT set_config(
+                'app.current_tenant_id',
+                :tenant_id,
+                true
+            )
+            """
+        ),
+        {
+            "tenant_id": str(tenant_id),
+        },
+    )
+
+
 async def delete_outbox_messages(
     *,
     tenant_id: UUID,
@@ -61,12 +85,19 @@ async def delete_outbox_messages(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(
+                session,
+                tenant_id,
+            )
+
             await session.execute(
                 delete(OutboxMessage).where(
                     OutboxMessage.tenant_id == tenant_id,
                 )
             )
+
             await session.commit()
+
     finally:
         await engine.dispose()
 
@@ -138,16 +169,30 @@ async def test_issue_invoice_commits_invoice_ledger_and_outbox_atomically() -> N
             )
         )
 
-        result = await use_case.execute(
-            tenant_id=tenant.id,
-            invoice_id=invoice.id,
-            actor_id=uuid4(),
+        tenant_context_token = set_current_tenant_id(
+            tenant.id,
         )
+
+        try:
+            result = await use_case.execute(
+                tenant_id=tenant.id,
+                invoice_id=invoice.id,
+                actor_id=uuid4(),
+            )
+        finally:
+            reset_current_tenant_id(
+                tenant_context_token,
+            )
 
         assert result.status == InvoiceStatus.ISSUED.value
         assert result.issued_at is not None
 
         async with session_factory() as session:
+            await set_session_tenant_context(
+                session,
+                tenant.id,
+            )
+
             persisted_invoice = await session.scalar(
                 select(Invoice).where(
                     Invoice.id == invoice.id,
@@ -234,6 +279,8 @@ async def test_issue_invoice_rolls_back_invoice_and_ledger_when_outbox_fails(
         self: SQLAlchemyOutboxMessageRepository,
         message: OutboxMessage,
     ) -> None:
+        del self, message
+
         raise RuntimeError("Forced outbox persistence failure.")
 
     monkeypatch.setattr(
@@ -263,17 +310,31 @@ async def test_issue_invoice_rolls_back_invoice_and_ledger_when_outbox_fails(
             )
         )
 
-        with pytest.raises(
-            RuntimeError,
-            match="Forced outbox persistence failure",
-        ):
-            await use_case.execute(
-                tenant_id=tenant.id,
-                invoice_id=invoice.id,
-                actor_id=uuid4(),
+        tenant_context_token = set_current_tenant_id(
+            tenant.id,
+        )
+
+        try:
+            with pytest.raises(
+                RuntimeError,
+                match="Forced outbox persistence failure",
+            ):
+                await use_case.execute(
+                    tenant_id=tenant.id,
+                    invoice_id=invoice.id,
+                    actor_id=uuid4(),
+                )
+        finally:
+            reset_current_tenant_id(
+                tenant_context_token,
             )
 
         async with session_factory() as verification_session:
+            await set_session_tenant_context(
+                verification_session,
+                tenant.id,
+            )
+
             persisted_invoice = await verification_session.scalar(
                 select(Invoice).where(
                     Invoice.id == invoice.id,
