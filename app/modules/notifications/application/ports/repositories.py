@@ -38,6 +38,13 @@ class NotificationRepository(Protocol):
         idempotency_key: str,
     ) -> Notification | None: ...
 
+    async def list_by_tenant(
+        self,
+        *,
+        tenant_id: UUID,
+        limit: int = 50,
+    ) -> Sequence[Notification]: ...
+
     async def list_ready_for_delivery(
         self,
         *,
