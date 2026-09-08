@@ -6,16 +6,19 @@ from app.modules.billing.api.routes import router as billing_router
 from app.modules.carriers.api.routes import router as carriers_router
 from app.modules.customers.api.routes import router as customers_router
 from app.modules.documents.api.routes import router as documents_router
+from app.modules.entitlements.api.routes import router as entitlements_router
 from app.modules.identity.api.invitation_routes import (
     router as invitation_router,
 )
 from app.modules.identity.api.routes import router as identity_router
 from app.modules.identity.api.tenant_routes import router as tenant_router
 from app.modules.locations.api.routes import router as locations_router
+from app.modules.notifications.api.routes import router as notifications_router
 from app.modules.packages.api.routes import router as packages_router
 from app.modules.payments.api.routes import router as payments_router
 from app.modules.pricing.api.routes import router as pricing_router
 from app.modules.rates.api.routes import router as rates_router
+from app.modules.saas.api.routes import router as saas_router
 from app.modules.shipment_events.api.routes import (
     router as shipment_events_router,
 )
@@ -43,6 +46,9 @@ def create_api_router(api_v1_prefix: str) -> APIRouter:
     versioned_router.include_router(documents_router)
     versioned_router.include_router(billing_router)
     versioned_router.include_router(payments_router)
+    versioned_router.include_router(saas_router)
+    versioned_router.include_router(entitlements_router)
+    versioned_router.include_router(notifications_router)
     versioned_router.include_router(ai_router)
 
     router.include_router(versioned_router)

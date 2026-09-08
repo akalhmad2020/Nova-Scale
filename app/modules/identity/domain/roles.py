@@ -71,6 +71,9 @@ DEFAULT_ROLES = (
             Permissions.PAYMENT_UPDATE,
             Permissions.PAYMENT_POST,
             Permissions.PAYMENT_VOID,
+            Permissions.SUBSCRIPTION_READ,
+            Permissions.ENTITLEMENT_READ,
+            Permissions.NOTIFICATION_READ,
         ),
     ),
     RoleDefinition(
@@ -127,6 +130,9 @@ DEFAULT_ROLES = (
             Permissions.PAYMENT_UPDATE,
             Permissions.PAYMENT_POST,
             Permissions.PAYMENT_VOID,
+            Permissions.SUBSCRIPTION_READ,
+            Permissions.ENTITLEMENT_READ,
+            Permissions.NOTIFICATION_READ,
         ),
     ),
     RoleDefinition(
@@ -147,6 +153,8 @@ DEFAULT_ROLES = (
             Permissions.SHIPMENT_LABEL_READ,
             Permissions.INVOICE_READ,
             Permissions.PAYMENT_READ,
+            Permissions.SUBSCRIPTION_READ,
+            Permissions.ENTITLEMENT_READ,
         ),
     ),
 )
