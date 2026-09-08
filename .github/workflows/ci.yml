@@ -65,8 +65,18 @@ jobs:
     env:
       APP_ENV: test
       AUTH_JWT_SECRET: "ci-only-jwt-secret-do-not-use-in-production-0123456789abcdef"
-      DATABASE_URL: postgresql+asyncpg://novascale:novascale_test_password@127.0.0.1:5432/novascale_test
-      TEST_DATABASE_URL: postgresql+asyncpg://novascale:novascale_test_password@127.0.0.1:5432/novascale_test
+
+      POSTGRES_DB: novascale_test
+      POSTGRES_USER: novascale
+      POSTGRES_PASSWORD: novascale_test_password
+
+      APP_DB_USER: novascale_app
+      APP_DB_PASSWORD: novascale_app_test_password
+
+      MIGRATION_DATABASE_URL: postgresql+asyncpg://novascale:novascale_test_password@127.0.0.1:5432/novascale_test
+      DATABASE_URL: postgresql+asyncpg://novascale_app:novascale_app_test_password@127.0.0.1:5432/novascale_test
+      TEST_DATABASE_URL: postgresql+asyncpg://novascale_app:novascale_app_test_password@127.0.0.1:5432/novascale_test
+      TEST_MIGRATION_DATABASE_URL: postgresql+asyncpg://novascale:novascale_test_password@127.0.0.1:5432/novascale_test
 
     steps:
       - name: Checkout
@@ -84,8 +94,14 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --all-groups
 
+      - name: Prepare test database
+        run: ./scripts/setup-test-database.sh
+
       - name: Run migrations
         run: uv run alembic upgrade head
+
+      - name: Refresh runtime database privileges
+        run: ./scripts/setup-test-database.sh
 
       - name: Integration tests
         run: uv run pytest -m "integration and not external_ai"
