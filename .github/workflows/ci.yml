@@ -94,14 +94,52 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --all-groups
 
-      - name: Prepare test database
-        run: ./scripts/setup-test-database.sh
+      - name: Create runtime database role
+        env:
+          PGPASSWORD: novascale_test_password
+        run: |
+          psql \
+            -h 127.0.0.1 \
+            -U novascale \
+            -d novascale_test \
+            -v ON_ERROR_STOP=1 \
+            -c "DO \$\$
+                BEGIN
+                  IF NOT EXISTS (
+                    SELECT 1
+                    FROM pg_roles
+                    WHERE rolname = 'novascale_app'
+                  ) THEN
+                    CREATE ROLE novascale_app
+                      LOGIN
+                      PASSWORD 'novascale_app_test_password'
+                      NOSUPERUSER
+                      NOCREATEDB
+                      NOCREATEROLE
+                      NOINHERIT
+                      NOBYPASSRLS;
+                  END IF;
+                END
+                \$\$;"
 
       - name: Run migrations
         run: uv run alembic upgrade head
 
-      - name: Refresh runtime database privileges
-        run: ./scripts/setup-test-database.sh
+      - name: Grant runtime database privileges
+        env:
+          PGPASSWORD: novascale_test_password
+        run: |
+          psql \
+            -h 127.0.0.1 \
+            -U novascale \
+            -d novascale_test \
+            -v ON_ERROR_STOP=1 \
+            -c "GRANT CONNECT ON DATABASE novascale_test TO novascale_app;" \
+            -c "GRANT USAGE ON SCHEMA public TO novascale_app;" \
+            -c "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO novascale_app;" \
+            -c "GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO novascale_app;" \
+            -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO novascale_app;" \
+            -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO novascale_app;"
 
       - name: Integration tests
         run: uv run pytest -m "integration and not external_ai"
