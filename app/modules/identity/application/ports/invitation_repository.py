@@ -21,6 +21,11 @@ class InvitationRepository(Protocol):
         tenant_id: UUID,
     ) -> Invitation | None: ...
 
+    async def count_pending_by_tenant(
+        self,
+        tenant_id: UUID,
+    ) -> int: ...
+
     def add(
         self,
         invitation: Invitation,

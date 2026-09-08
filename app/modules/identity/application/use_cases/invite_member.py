@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+from app.modules.entitlements.application.exceptions import EntitlementLimitExceededError
+from app.modules.entitlements.domain.catalog import get_plan_entitlements
 from app.modules.identity.application.exceptions import (
     InvitationAlreadyPendingError,
     RoleNotFoundError,
@@ -13,6 +15,7 @@ from app.modules.identity.application.ports.invitation_token_service import (
 from app.modules.identity.application.ports.unit_of_work import UnitOfWork
 from app.modules.identity.domain.enums import InvitationStatus
 from app.modules.identity.infrastructure.models.invitation import Invitation
+from app.modules.saas.application.exceptions import SubscriptionNotFoundError
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +76,27 @@ class InviteMember:
 
             if pending_invitation is not None:
                 raise InvitationAlreadyPendingError
+
+            subscription = await uow.subscriptions.get_by_tenant(command.tenant_id)
+
+            if subscription is None:
+                raise SubscriptionNotFoundError
+
+            member_limit = get_plan_entitlements(
+                subscription.plan_code,
+            ).team_member_limit
+
+            if member_limit is not None:
+                active_members = await uow.memberships.count_active_by_tenant(command.tenant_id)
+                pending_invitations = await uow.invitations.count_pending_by_tenant(
+                    command.tenant_id
+                )
+
+                if active_members + pending_invitations >= member_limit:
+                    raise EntitlementLimitExceededError(
+                        f"Plan '{subscription.plan_code.value}' allows at most "
+                        f"{member_limit} team members."
+                    )
 
             token = self._invitation_token_service.generate_token()
             token_hash = self._invitation_token_service.hash_token(token)

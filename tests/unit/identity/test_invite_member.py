@@ -1,5 +1,5 @@
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -20,6 +20,8 @@ from app.modules.identity.infrastructure.models.invitation import Invitation
 from app.modules.identity.infrastructure.models.membership import Membership
 from app.modules.identity.infrastructure.models.role import Role
 from app.modules.identity.infrastructure.models.user import User
+from app.modules.saas.domain.enums import PlanCode, SubscriptionStatus
+from app.modules.saas.infrastructure.models.subscription import TenantSubscription
 from tests.unit.identity.fakes import FakeUnitOfWork
 
 
@@ -38,6 +40,19 @@ def make_role() -> Role:
     return Role(
         name=f"member-{uuid4()}",
         description="Invited member role",
+    )
+
+
+def add_active_subscription(
+    uow: FakeUnitOfWork,
+    tenant_id: UUID,
+) -> None:
+    uow.subscriptions.add(
+        TenantSubscription(
+            tenant_id=tenant_id,
+            plan_code=PlanCode.STARTER,
+            status=SubscriptionStatus.ACTIVE,
+        )
     )
 
 
@@ -60,6 +75,7 @@ async def test_invite_member_creates_pending_invitation() -> None:
     uow.roles.add(role)
 
     tenant_id = uuid4()
+    add_active_subscription(uow, tenant_id)
 
     use_case = make_use_case(uow)
 
@@ -95,11 +111,14 @@ async def test_invite_member_does_not_store_raw_token() -> None:
     role = make_role()
     uow.roles.add(role)
 
+    tenant_id = uuid4()
+    add_active_subscription(uow, tenant_id)
+
     use_case = make_use_case(uow)
 
     result = await use_case.execute(
         InviteMemberCommand(
-            tenant_id=uuid4(),
+            tenant_id=tenant_id,
             email="secure@example.com",
             role_id=role.id,
         )
@@ -118,11 +137,14 @@ async def test_invite_member_normalizes_email() -> None:
     role = make_role()
     uow.roles.add(role)
 
+    tenant_id = uuid4()
+    add_active_subscription(uow, tenant_id)
+
     use_case = make_use_case(uow)
 
     result = await use_case.execute(
         InviteMemberCommand(
-            tenant_id=uuid4(),
+            tenant_id=tenant_id,
             email="  NEW-MEMBER@EXAMPLE.COM  ",
             role_id=role.id,
         )
@@ -141,6 +163,9 @@ async def test_invite_member_sets_expected_expiration() -> None:
     role = make_role()
     uow.roles.add(role)
 
+    tenant_id = uuid4()
+    add_active_subscription(uow, tenant_id)
+
     before = datetime.now(UTC)
 
     use_case = make_use_case(
@@ -150,7 +175,7 @@ async def test_invite_member_sets_expected_expiration() -> None:
 
     result = await use_case.execute(
         InviteMemberCommand(
-            tenant_id=uuid4(),
+            tenant_id=tenant_id,
             email="expires@example.com",
             role_id=role.id,
         )
@@ -267,11 +292,14 @@ async def test_invite_member_commits_transaction() -> None:
     role = make_role()
     uow.roles.add(role)
 
+    tenant_id = uuid4()
+    add_active_subscription(uow, tenant_id)
+
     use_case = make_use_case(uow)
 
     await use_case.execute(
         InviteMemberCommand(
-            tenant_id=uuid4(),
+            tenant_id=tenant_id,
             email="commit@example.com",
             role_id=role.id,
         )

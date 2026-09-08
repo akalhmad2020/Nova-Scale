@@ -28,6 +28,8 @@ from app.modules.identity.infrastructure.models.user import User
 from app.modules.identity.infrastructure.security.password_hasher import (
     Argon2PasswordHasher,
 )
+from app.modules.saas.domain.enums import PlanCode, SubscriptionStatus
+from app.modules.saas.infrastructure.models.subscription import TenantSubscription
 
 
 async def cleanup_test_data(
@@ -71,6 +73,10 @@ async def cleanup_test_data(
                 await session.execute(delete(Invitation).where(Invitation.tenant_id == tenant_id))
 
                 await session.execute(delete(Membership).where(Membership.tenant_id == tenant_id))
+
+                await session.execute(
+                    delete(TenantSubscription).where(TenantSubscription.tenant_id == tenant_id)
+                )
 
             if role_ids:
                 await session.execute(
@@ -160,6 +166,15 @@ async def create_invitation_context(
 
             await session.flush()
 
+            subscription = TenantSubscription(
+                tenant_id=tenant.id,
+                plan_code=PlanCode.STARTER,
+                status=SubscriptionStatus.ACTIVE,
+                cancel_at_period_end=False,
+            )
+
+            session.add(subscription)
+
             session.add(
                 Membership(
                     tenant_id=tenant.id,
@@ -216,6 +231,7 @@ async def create_existing_member(
             )
 
             session.add(user)
+
             await session.flush()
 
             session.add(
@@ -235,17 +251,17 @@ async def create_existing_member(
 
 def login_and_get_access_token(
     *,
+    client: TestClient,
     email: str,
     password: str,
 ) -> str:
-    with TestClient(app) as client:
-        response = client.post(
-            "/api/v1/auth/login",
-            json={
-                "email": email,
-                "password": password,
-            },
-        )
+    response = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": email,
+            "password": password,
+        },
+    )
 
     assert response.status_code == 200
 
@@ -278,12 +294,13 @@ async def test_invite_member_endpoint_creates_invitation() -> None:
     )
 
     try:
-        access_token = login_and_get_access_token(
-            email=inviter_email,
-            password=inviter_password,
-        )
-
         with TestClient(app) as client:
+            access_token = login_and_get_access_token(
+                client=client,
+                email=inviter_email,
+                password=inviter_password,
+            )
+
             response = client.post(
                 f"/api/v1/tenants/{tenant.id}/invitations",
                 headers={
@@ -295,7 +312,7 @@ async def test_invite_member_endpoint_creates_invitation() -> None:
                 },
             )
 
-        assert response.status_code == 201
+        assert response.status_code == 201, response.text
 
         body = response.json()
 
@@ -341,12 +358,13 @@ async def test_invite_member_endpoint_requires_permission() -> None:
     )
 
     try:
-        access_token = login_and_get_access_token(
-            email=inviter_email,
-            password=inviter_password,
-        )
-
         with TestClient(app) as client:
+            access_token = login_and_get_access_token(
+                client=client,
+                email=inviter_email,
+                password=inviter_password,
+            )
+
             response = client.post(
                 f"/api/v1/tenants/{tenant.id}/invitations",
                 headers={
@@ -359,6 +377,7 @@ async def test_invite_member_endpoint_requires_permission() -> None:
             )
 
         assert response.status_code == 403
+
         assert response.json() == {"detail": "Permission denied"}
 
     finally:
@@ -394,12 +413,13 @@ async def test_invite_member_endpoint_rejects_duplicate_pending_invitation() -> 
     )
 
     try:
-        access_token = login_and_get_access_token(
-            email=inviter_email,
-            password=inviter_password,
-        )
-
         with TestClient(app) as client:
+            access_token = login_and_get_access_token(
+                client=client,
+                email=inviter_email,
+                password=inviter_password,
+            )
+
             first_response = client.post(
                 f"/api/v1/tenants/{tenant.id}/invitations",
                 headers={
@@ -422,7 +442,7 @@ async def test_invite_member_endpoint_rejects_duplicate_pending_invitation() -> 
                 },
             )
 
-        assert first_response.status_code == 201
+        assert first_response.status_code == 201, first_response.text
         assert second_response.status_code == 409
 
         assert second_response.json() == {"detail": "A pending invitation already exists"}
@@ -469,12 +489,13 @@ async def test_invite_member_endpoint_rejects_existing_member() -> None:
     )
 
     try:
-        access_token = login_and_get_access_token(
-            email=inviter_email,
-            password=inviter_password,
-        )
-
         with TestClient(app) as client:
+            access_token = login_and_get_access_token(
+                client=client,
+                email=inviter_email,
+                password=inviter_password,
+            )
+
             response = client.post(
                 f"/api/v1/tenants/{tenant.id}/invitations",
                 headers={

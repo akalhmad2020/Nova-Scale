@@ -17,6 +17,7 @@ from app.modules.identity.infrastructure.models.user import User
 from app.modules.ledger.application.use_cases.bootstrap_accounts import (
     SYSTEM_LEDGER_ACCOUNTS,
 )
+from app.modules.saas.domain.enums import PlanCode, SubscriptionStatus
 from tests.unit.identity.fakes import (
     FakePasswordHasher,
     FakeUnitOfWork,
@@ -89,6 +90,12 @@ async def test_register_company_creates_owner_and_tenant() -> None:
 
     assert all(account.tenant_id == tenant.id for account in uow.ledger_accounts.accounts)
 
+    assert len(uow.subscriptions.subscriptions) == 1
+    subscription = uow.subscriptions.subscriptions[0]
+    assert subscription.tenant_id == tenant.id
+    assert subscription.plan_code is PlanCode.STARTER
+    assert subscription.status is SubscriptionStatus.ACTIVE
+
     assert result.user_id == user.id
     assert result.tenant_id == tenant.id
     assert result.membership_id == membership.id
@@ -126,6 +133,7 @@ async def test_register_company_rejects_duplicate_email() -> None:
     assert len(uow.tenants.tenants) == 0
     assert len(uow.memberships.memberships) == 0
     assert len(uow.ledger_accounts.accounts) == 0
+    assert len(uow.subscriptions.subscriptions) == 0
 
 
 @pytest.mark.asyncio
@@ -156,6 +164,7 @@ async def test_register_company_rejects_duplicate_tenant_slug() -> None:
     assert len(uow.users.users) == 0
     assert len(uow.memberships.memberships) == 0
     assert len(uow.ledger_accounts.accounts) == 0
+    assert len(uow.subscriptions.subscriptions) == 0
 
 
 @pytest.mark.asyncio

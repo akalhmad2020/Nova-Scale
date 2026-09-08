@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.identity.domain.enums import InvitationStatus
@@ -52,6 +52,22 @@ class InvitationRepository:
         result = await self._session.execute(statement)
 
         return result.scalar_one_or_none()
+
+    async def count_pending_by_tenant(
+        self,
+        tenant_id: UUID,
+    ) -> int:
+        statement = (
+            select(func.count())
+            .select_from(Invitation)
+            .where(
+                Invitation.tenant_id == tenant_id,
+                Invitation.status == InvitationStatus.PENDING,
+            )
+        )
+
+        result = await self._session.execute(statement)
+        return int(result.scalar_one())
 
     def add(
         self,

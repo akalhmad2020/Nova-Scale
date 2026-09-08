@@ -3,6 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
+from app.modules.entitlements.application.exceptions import EntitlementLimitExceededError
 from app.modules.identity.api.auth_dependencies import (
     get_current_membership,
     get_current_user,
@@ -61,6 +62,7 @@ from app.modules.identity.domain.enums import InvitationStatus
 from app.modules.identity.domain.permissions import Permissions
 from app.modules.identity.infrastructure.models.membership import Membership
 from app.modules.identity.infrastructure.models.user import User
+from app.modules.saas.application.exceptions import SubscriptionNotFoundError
 
 router = APIRouter(
     prefix="/tenants",
@@ -172,6 +174,16 @@ async def invite_member(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="User is already a member of this tenant",
+        ) from exc
+    except EntitlementLimitExceededError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except SubscriptionNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Tenant subscription is not provisioned",
         ) from exc
     except RoleNotFoundError as exc:
         raise HTTPException(

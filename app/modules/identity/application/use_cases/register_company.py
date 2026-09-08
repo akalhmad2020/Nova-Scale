@@ -18,6 +18,8 @@ from app.modules.ledger.application.use_cases.bootstrap_accounts import (
 )
 from app.modules.ledger.domain.enums import LedgerAccountStatus
 from app.modules.ledger.infrastructure.models import LedgerAccount
+from app.modules.saas.domain.enums import PlanCode, SubscriptionStatus
+from app.modules.saas.infrastructure.models.subscription import TenantSubscription
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +101,13 @@ class RegisterCompany:
                 status=MembershipStatus.ACTIVE,
             )
             uow.memberships.add(membership)
+
+            subscription = TenantSubscription(
+                tenant_id=tenant.id,
+                plan_code=PlanCode.STARTER,
+                status=SubscriptionStatus.ACTIVE,
+            )
+            uow.subscriptions.add(subscription)
 
             for definition in SYSTEM_LEDGER_ACCOUNTS:
                 account = LedgerAccount(
