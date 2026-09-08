@@ -1,3 +1,4 @@
+import asyncio
 from logging.config import fileConfig
 
 from alembic import context
@@ -5,6 +6,7 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+from app.ai.infrastructure.vector_store.models import RagChunkModel  # noqa: F401
 from app.core.config import get_settings
 from app.modules.audit.infrastructure.models import AuditLog  # noqa: F401
 from app.modules.billing.infrastructure.models.invoice import Invoice  # noqa: F401
@@ -35,6 +37,7 @@ from app.modules.payments.infrastructure.models.payment_allocation import (  # n
 )
 from app.modules.pricing.infrastructure.models import PricingRule  # noqa: F401
 from app.modules.rates.infrastructure.models.rate_quote import RateQuote  # noqa: F401
+from app.modules.saas.infrastructure.models import TenantSubscription  # noqa: F401
 from app.modules.shipment_events.infrastructure.models import ShipmentEvent  # noqa: F401
 from app.modules.shipments.infrastructure.models import Shipment  # noqa: F401
 from app.shared.infrastructure.database import Base
@@ -49,7 +52,7 @@ settings = get_settings()
 
 config.set_main_option(
     "sqlalchemy.url",
-    settings.database_url,
+    settings.migration_database_url,
 )
 
 target_metadata = Base.metadata
@@ -85,7 +88,10 @@ def do_run_migrations(connection: Connection) -> None:
 
 async def run_migrations_online() -> None:
     connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        config.get_section(
+            config.config_ini_section,
+            {},
+        ),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
@@ -99,6 +105,4 @@ async def run_migrations_online() -> None:
 if context.is_offline_mode():
     run_migrations_offline()
 else:
-    import asyncio
-
     asyncio.run(run_migrations_online())

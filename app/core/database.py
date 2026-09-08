@@ -1,16 +1,39 @@
 from collections.abc import AsyncIterator
 
+from sqlalchemy import event, text
+from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy.orm import Session, SessionTransaction
 from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
+from app.core.tenant_context import get_current_tenant_id
 
 settings = get_settings()
+
+
+@event.listens_for(Session, "after_begin")
+def _set_transaction_tenant_context(
+    session: Session,
+    transaction: SessionTransaction,
+    connection: Connection,
+) -> None:
+    del session, transaction
+
+    tenant_id = get_current_tenant_id()
+
+    if tenant_id is None:
+        return
+
+    connection.execute(
+        text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+        {"tenant_id": str(tenant_id)},
+    )
 
 
 def create_engine() -> AsyncEngine:
