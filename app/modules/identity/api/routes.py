@@ -7,13 +7,14 @@ from app.modules.identity.api.dependencies import (
     get_login_user_use_case,
     get_logout_user_use_case,
     get_refresh_session_use_case,
-    get_register_user_use_case,
+    get_register_company_use_case,
 )
 from app.modules.identity.api.schemas import (
     LoginRequest,
     LogoutRequest,
     RefreshTokenRequest,
-    RegisterUserRequest,
+    RegisterCompanyRequest,
+    RegisterCompanyResponse,
     TokenResponse,
     UserResponse,
 )
@@ -22,6 +23,7 @@ from app.modules.identity.application.exceptions import (
     InactiveUserError,
     InvalidCredentialsError,
     InvalidRefreshTokenError,
+    TenantSlugAlreadyExistsError,
 )
 from app.modules.identity.application.use_cases.login_user import (
     LoginUser,
@@ -35,9 +37,9 @@ from app.modules.identity.application.use_cases.refresh_session import (
     RefreshSession,
     RefreshSessionCommand,
 )
-from app.modules.identity.application.use_cases.register_user import (
-    RegisterUser,
-    RegisterUserCommand,
+from app.modules.identity.application.use_cases.register_company import (
+    RegisterCompany,
+    RegisterCompanyCommand,
 )
 from app.modules.identity.infrastructure.models.user import User
 
@@ -49,23 +51,25 @@ router = APIRouter(
 
 @router.post(
     "/register",
-    response_model=UserResponse,
+    response_model=RegisterCompanyResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def register_user(
-    request: RegisterUserRequest,
+async def register_company(
+    request: RegisterCompanyRequest,
     use_case: Annotated[
-        RegisterUser,
-        Depends(get_register_user_use_case),
+        RegisterCompany,
+        Depends(get_register_company_use_case),
     ],
-) -> UserResponse:
+) -> RegisterCompanyResponse:
     try:
-        user = await use_case.execute(
-            RegisterUserCommand(
+        result = await use_case.execute(
+            RegisterCompanyCommand(
                 email=str(request.email),
                 password=request.password,
                 first_name=request.first_name,
                 last_name=request.last_name,
+                company_name=request.company_name,
+                company_slug=request.company_slug,
             )
         )
     except EmailAlreadyRegisteredError as exc:
@@ -73,8 +77,22 @@ async def register_user(
             status_code=status.HTTP_409_CONFLICT,
             detail="Email is already registered",
         ) from exc
+    except TenantSlugAlreadyExistsError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Tenant slug already exists",
+        ) from exc
 
-    return UserResponse.model_validate(user)
+    return RegisterCompanyResponse(
+        user_id=result.user_id,
+        tenant_id=result.tenant_id,
+        membership_id=result.membership_id,
+        email=result.email,
+        first_name=result.first_name,
+        last_name=result.last_name,
+        company_name=result.company_name,
+        company_slug=result.company_slug,
+    )
 
 
 @router.post(

@@ -2,6 +2,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 
+from app.core.tenant_context import reset_current_tenant_id, set_current_tenant_id
 from app.shared.outbox.application.ports.handlers import (
     OutboxMessageHandlerResolver,
 )
@@ -90,6 +91,8 @@ class OutboxProcessingService:
                 await unit_of_work.rollback()
                 return
 
+            tenant_context_token = set_current_tenant_id(message.tenant_id)
+
             try:
                 await handler.handle(message)
             except Exception as exc:
@@ -103,6 +106,8 @@ class OutboxProcessingService:
                     error=str(exc),
                 )
                 return
+            finally:
+                reset_current_tenant_id(tenant_context_token)
 
         async with self._unit_of_work_factory() as unit_of_work:
             updated = await unit_of_work.messages.mark_processed(

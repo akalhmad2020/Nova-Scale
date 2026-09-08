@@ -3,6 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
+from app.modules.entitlements.application.exceptions import EntitlementLimitExceededError
 from app.modules.identity.api.auth_dependencies import (
     get_current_membership,
     get_current_user,
@@ -10,7 +11,6 @@ from app.modules.identity.api.auth_dependencies import (
 )
 from app.modules.identity.api.dependencies import (
     get_change_member_role_use_case,
-    get_create_tenant_use_case,
     get_invite_member_use_case,
     get_list_tenant_members_use_case,
     get_list_user_tenants_use_case,
@@ -19,8 +19,6 @@ from app.modules.identity.api.dependencies import (
 )
 from app.modules.identity.api.schemas import (
     ChangeMemberRoleRequest,
-    CreateTenantRequest,
-    CreateTenantResponse,
     InvitationResponse,
     InviteMemberRequest,
     MembershipResponse,
@@ -36,16 +34,11 @@ from app.modules.identity.application.exceptions import (
     MembershipNotFoundError,
     MembershipTenantMismatchError,
     RoleNotFoundError,
-    TenantSlugAlreadyExistsError,
     UserAlreadyMemberError,
 )
 from app.modules.identity.application.use_cases.change_member_role import (
     ChangeMemberRole,
     ChangeMemberRoleCommand,
-)
-from app.modules.identity.application.use_cases.create_tenant import (
-    CreateTenant,
-    CreateTenantCommand,
 )
 from app.modules.identity.application.use_cases.invite_member import (
     InviteMember,
@@ -65,52 +58,16 @@ from app.modules.identity.application.use_cases.suspend_membership import (
     SuspendMembership,
     SuspendMembershipCommand,
 )
+from app.modules.identity.domain.enums import InvitationStatus
 from app.modules.identity.domain.permissions import Permissions
 from app.modules.identity.infrastructure.models.membership import Membership
 from app.modules.identity.infrastructure.models.user import User
+from app.modules.saas.application.exceptions import SubscriptionNotFoundError
 
 router = APIRouter(
     prefix="/tenants",
     tags=["tenants"],
 )
-
-
-@router.post(
-    "",
-    response_model=CreateTenantResponse,
-    status_code=status.HTTP_201_CREATED,
-)
-async def create_tenant(
-    request: CreateTenantRequest,
-    current_user: Annotated[
-        User,
-        Depends(get_current_user),
-    ],
-    use_case: Annotated[
-        CreateTenant,
-        Depends(get_create_tenant_use_case),
-    ],
-) -> CreateTenantResponse:
-    try:
-        result = await use_case.execute(
-            CreateTenantCommand(
-                user_id=current_user.id,
-                name=request.name,
-                slug=request.slug,
-            )
-        )
-    except TenantSlugAlreadyExistsError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Tenant slug already exists",
-        ) from exc
-
-    return CreateTenantResponse(
-        id=result.tenant_id,
-        membership_id=result.membership_id,
-        name=result.name,
-        slug=result.slug,
-    )
 
 
 @router.get(
@@ -201,7 +158,7 @@ async def invite_member(
     ],
 ) -> InvitationResponse:
     try:
-        invitation = await use_case.execute(
+        result = await use_case.execute(
             InviteMemberCommand(
                 tenant_id=tenant_id,
                 email=str(request.email),
@@ -218,13 +175,31 @@ async def invite_member(
             status_code=status.HTTP_409_CONFLICT,
             detail="User is already a member of this tenant",
         ) from exc
+    except EntitlementLimitExceededError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except SubscriptionNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Tenant subscription is not provisioned",
+        ) from exc
     except RoleNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Role not found",
         ) from exc
 
-    return InvitationResponse.model_validate(invitation)
+    return InvitationResponse(
+        id=result.invitation_id,
+        tenant_id=result.tenant_id,
+        role_id=result.role_id,
+        email=result.email,
+        status=InvitationStatus.PENDING,
+        expires_at=result.expires_at,
+        accepted_at=None,
+    )
 
 
 @router.get(

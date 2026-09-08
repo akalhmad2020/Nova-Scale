@@ -13,7 +13,10 @@ from app.ai.application.services.answer_question import AnswerQuestionService
 from app.ai.infrastructure.agent.langgraph_runtime import LangGraphAgentRuntime
 from app.core.config import Settings, get_settings
 from app.core.database import get_db_session
-from app.modules.identity.api.auth_dependencies import get_current_membership
+from app.modules.entitlements.api.dependencies import require_entitlement
+from app.modules.entitlements.domain.catalog import Entitlements
+from app.modules.identity.api.auth_dependencies import require_permission
+from app.modules.identity.domain.permissions import Permissions
 from app.modules.identity.infrastructure.models.membership import Membership
 
 router = APIRouter(
@@ -103,7 +106,11 @@ async def ask_question(
     ],
     _membership: Annotated[
         Membership,
-        Depends(get_current_membership),
+        Depends(require_entitlement(Entitlements.AI_ASSISTANT)),
+    ],
+    _document_access: Annotated[
+        Membership,
+        Depends(require_permission(Permissions.DOCUMENT_READ)),
     ],
 ) -> AskQuestionResponse:
     answer = await service.execute(
@@ -140,7 +147,15 @@ async def run_agent(
     ],
     _membership: Annotated[
         Membership,
-        Depends(get_current_membership),
+        Depends(require_entitlement(Entitlements.AI_ASSISTANT)),
+    ],
+    _shipment_access: Annotated[
+        Membership,
+        Depends(require_permission(Permissions.SHIPMENT_READ)),
+    ],
+    _document_access: Annotated[
+        Membership,
+        Depends(require_permission(Permissions.DOCUMENT_READ)),
     ],
 ) -> AgentResponse:
     answer = await runtime.execute(

@@ -6,6 +6,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Numeric,
     String,
@@ -29,6 +30,12 @@ class RateQuote(
     __tablename__ = "rate_quotes"
 
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "shipment_id"],
+            ["shipments.tenant_id", "shipments.id"],
+            name="fk_rate_quotes_tenant_shipment",
+            ondelete="RESTRICT",
+        ),
         CheckConstraint(
             "base_amount >= 0",
             name="base_amount_non_negative",
@@ -70,10 +77,6 @@ class RateQuote(
 
     shipment_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey(
-            "shipments.id",
-            ondelete="RESTRICT",
-        ),
         nullable=False,
     )
 

@@ -19,6 +19,7 @@ from app.ai.infrastructure.vector_store.postgres_vector_store import (
     PostgresVectorStore,
 )
 from app.core.config import get_settings
+from tests.integration.rls import set_session_tenant_context
 
 
 @pytest.mark.integration
@@ -83,6 +84,8 @@ async def test_stored_document_can_be_indexed_and_retrieved(
         embedding_provider=embedding_provider,
         vector_store=vector_store,
     )
+
+    await set_session_tenant_context(db_session, tenant_id)
 
     indexed_chunks = await index_stored_document_service.execute(
         tenant_id=tenant_id,

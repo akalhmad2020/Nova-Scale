@@ -3,7 +3,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -30,6 +30,26 @@ from app.modules.identity.infrastructure.models.user import User
 from app.modules.identity.infrastructure.security.password_hasher import (
     Argon2PasswordHasher,
 )
+
+
+async def set_session_tenant_context(
+    session: AsyncSession,
+    tenant_id: UUID,
+) -> None:
+    await session.execute(
+        text(
+            """
+            SELECT set_config(
+                'app.current_tenant_id',
+                :tenant_id,
+                true
+            )
+            """
+        ),
+        {
+            "tenant_id": str(tenant_id),
+        },
+    )
 
 
 async def cleanup_test_data(
@@ -76,22 +96,27 @@ async def cleanup_test_data(
                 )
             )
 
-            if tenant_ids:
+            for tenant_id in tenant_ids:
+                await set_session_tenant_context(
+                    session,
+                    tenant_id,
+                )
+
                 await session.execute(
                     delete(InvoiceLine).where(
-                        InvoiceLine.tenant_id.in_(tenant_ids),
+                        InvoiceLine.tenant_id == tenant_id,
                     )
                 )
 
                 await session.execute(
                     delete(Invoice).where(
-                        Invoice.tenant_id.in_(tenant_ids),
+                        Invoice.tenant_id == tenant_id,
                     )
                 )
 
                 await session.execute(
                     delete(Customer).where(
-                        Customer.tenant_id.in_(tenant_ids),
+                        Customer.tenant_id == tenant_id,
                     )
                 )
 
@@ -218,6 +243,11 @@ async def create_read_context(
 
             await session.flush()
 
+            await set_session_tenant_context(
+                session,
+                tenant.id,
+            )
+
             customer = Customer(
                 tenant_id=tenant.id,
                 name="Billing Read Customer",
@@ -275,6 +305,11 @@ async def create_invoice(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(
+                session,
+                tenant_id,
+            )
+
             invoice = Invoice(
                 tenant_id=tenant_id,
                 customer_id=customer_id,
@@ -323,6 +358,11 @@ async def create_foreign_invoice(
 
             session.add(tenant)
             await session.flush()
+
+            await set_session_tenant_context(
+                session,
+                tenant.id,
+            )
 
             customer = Customer(
                 tenant_id=tenant.id,

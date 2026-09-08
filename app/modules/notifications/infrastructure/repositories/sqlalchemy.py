@@ -125,6 +125,22 @@ class SQLAlchemyNotificationRepository:
 
         return result.scalar_one_or_none()
 
+    async def list_by_tenant(
+        self,
+        *,
+        tenant_id: UUID,
+        limit: int = 50,
+    ) -> Sequence[Notification]:
+        statement = (
+            select(Notification)
+            .where(Notification.tenant_id == tenant_id)
+            .order_by(Notification.created_at.desc())
+            .limit(limit)
+        )
+
+        result = await self._session.execute(statement)
+        return result.scalars().all()
+
     async def list_ready_for_delivery(
         self,
         *,

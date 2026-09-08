@@ -16,14 +16,19 @@ from app.modules.identity.domain.enums import (
     MembershipStatus,
     TenantStatus,
 )
+from app.modules.identity.domain.permissions import Permissions
 from app.modules.identity.infrastructure.models.auth_session import AuthSession
 from app.modules.identity.infrastructure.models.membership import Membership
+from app.modules.identity.infrastructure.models.permission import Permission
 from app.modules.identity.infrastructure.models.role import Role
+from app.modules.identity.infrastructure.models.role_permission import RolePermission
 from app.modules.identity.infrastructure.models.tenant import Tenant
 from app.modules.identity.infrastructure.models.user import User
 from app.modules.identity.infrastructure.security.password_hasher import (
     Argon2PasswordHasher,
 )
+from app.modules.saas.domain.enums import PlanCode, SubscriptionStatus
+from app.modules.saas.infrastructure.models.subscription import TenantSubscription
 
 
 async def create_identity_context(
@@ -50,6 +55,36 @@ async def create_identity_context(
 
     try:
         async with session_factory() as session:
+            permission_specs = (
+                (
+                    Permissions.SHIPMENT_READ,
+                    "Read shipments",
+                ),
+                (
+                    Permissions.DOCUMENT_READ,
+                    "Read documents",
+                ),
+            )
+
+            permissions: list[Permission] = []
+
+            for permission_code, description in permission_specs:
+                permission = await session.scalar(
+                    select(Permission).where(
+                        Permission.code == permission_code,
+                    )
+                )
+
+                if permission is None:
+                    permission = Permission(
+                        code=permission_code,
+                        description=description,
+                    )
+                    session.add(permission)
+                    await session.flush()
+
+                permissions.append(permission)
+
             user = User(
                 email=email,
                 password_hash=password_hasher.hash(password),
@@ -80,6 +115,15 @@ async def create_identity_context(
             await session.flush()
 
             session.add(
+                TenantSubscription(
+                    tenant_id=tenant.id,
+                    plan_code=PlanCode.PROFESSIONAL,
+                    status=SubscriptionStatus.ACTIVE,
+                    cancel_at_period_end=False,
+                )
+            )
+
+            session.add(
                 Membership(
                     tenant_id=tenant.id,
                     user_id=user.id,
@@ -88,9 +132,18 @@ async def create_identity_context(
                 )
             )
 
+            for permission in permissions:
+                session.add(
+                    RolePermission(
+                        role_id=role.id,
+                        permission_id=permission.id,
+                    )
+                )
+
             await session.commit()
 
             return tenant
+
     finally:
         await engine.dispose()
 
@@ -126,23 +179,24 @@ async def create_tenant_without_membership(
             await session.commit()
 
             return tenant
+
     finally:
         await engine.dispose()
 
 
-async def login_and_get_access_token(
+def login_and_get_access_token(
     *,
+    client: TestClient,
     email: str,
     password: str,
 ) -> str:
-    with TestClient(app) as client:
-        response = client.post(
-            "/api/v1/auth/login",
-            json={
-                "email": email,
-                "password": password,
-            },
-        )
+    response = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": email,
+            "password": password,
+        },
+    )
 
     assert response.status_code == 200
 
@@ -180,22 +234,20 @@ async def cleanup_test_data(
                 )
             )
 
+            role_ids = list(
+                (
+                    await session.execute(
+                        select(Membership.role_id).where(
+                            Membership.tenant_id.in_(tenant_ids),
+                        )
+                    )
+                ).scalars()
+            )
+
             if user_id is not None:
                 await session.execute(
                     delete(AuthSession).where(
                         AuthSession.user_id == user_id,
-                    )
-                )
-
-                await session.execute(
-                    delete(Membership).where(
-                        Membership.user_id == user_id,
-                    )
-                )
-
-                await session.execute(
-                    delete(User).where(
-                        User.id == user_id,
                     )
                 )
 
@@ -205,13 +257,48 @@ async def cleanup_test_data(
                 )
             )
 
+            if user_id is not None:
+                await session.execute(
+                    delete(Membership).where(
+                        Membership.user_id == user_id,
+                    )
+                )
+
+            if role_ids:
+                await session.execute(
+                    delete(RolePermission).where(
+                        RolePermission.role_id.in_(role_ids),
+                    )
+                )
+
+            await session.execute(
+                delete(TenantSubscription).where(
+                    TenantSubscription.tenant_id.in_(tenant_ids),
+                )
+            )
+
+            if user_id is not None:
+                await session.execute(
+                    delete(User).where(
+                        User.id == user_id,
+                    )
+                )
+
             await session.execute(
                 delete(Tenant).where(
                     Tenant.id.in_(tenant_ids),
                 )
             )
 
+            if role_ids:
+                await session.execute(
+                    delete(Role).where(
+                        Role.id.in_(role_ids),
+                    )
+                )
+
             await session.commit()
+
     finally:
         await engine.dispose()
 
@@ -233,12 +320,13 @@ async def test_agent_endpoint_rejects_cross_tenant_access() -> None:
     )
 
     try:
-        access_token = await login_and_get_access_token(
-            email=email,
-            password=password,
-        )
-
         with TestClient(app) as client:
+            access_token = login_and_get_access_token(
+                client=client,
+                email=email,
+                password=password,
+            )
+
             response = client.post(
                 f"/api/v1/ai/tenants/{tenant_b.id}/agent",
                 headers={
@@ -296,12 +384,13 @@ async def test_agent_endpoint_runs_authenticated_agent() -> None:
     )
 
     try:
-        access_token = await login_and_get_access_token(
-            email=email,
-            password=password,
-        )
-
         with TestClient(app) as client:
+            access_token = login_and_get_access_token(
+                client=client,
+                email=email,
+                password=password,
+            )
+
             response = client.post(
                 f"/api/v1/ai/tenants/{tenant.id}/agent",
                 headers={
@@ -315,7 +404,7 @@ async def test_agent_endpoint_runs_authenticated_agent() -> None:
                 },
             )
 
-        assert response.status_code == 200
+        assert response.status_code == 200, response.text
 
         data = response.json()
 

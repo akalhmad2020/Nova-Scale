@@ -3,15 +3,18 @@ import pytest
 from app.ai.infrastructure.embeddings.ollama_embedding_provider import (
     OllamaEmbeddingProvider,
 )
+from app.core.config import get_settings
 
 
 @pytest.mark.integration
 @pytest.mark.external_ai
 @pytest.mark.asyncio
 async def test_ollama_embedding_provider_generates_embedding() -> None:
+    settings = get_settings()
+
     provider = OllamaEmbeddingProvider(
-        base_url="http://host.docker.internal:11434",
-        model="nomic-embed-text",
+        base_url=settings.ai_ollama_base_url,
+        model=settings.ai_ollama_embedding_model,
     )
 
     embedding = await provider.embed_text(
@@ -27,9 +30,11 @@ async def test_ollama_embedding_provider_generates_embedding() -> None:
 @pytest.mark.external_ai
 @pytest.mark.asyncio
 async def test_ollama_embedding_provider_generates_multiple_embeddings() -> None:
+    settings = get_settings()
+
     provider = OllamaEmbeddingProvider(
-        base_url="http://host.docker.internal:11434",
-        model="nomic-embed-text",
+        base_url=settings.ai_ollama_base_url,
+        model=settings.ai_ollama_embedding_model,
     )
 
     embeddings = await provider.embed_texts(

@@ -82,6 +82,10 @@ class Permissions:
     PAYMENT_POST = "payment:post"
     PAYMENT_VOID = "payment:void"
 
+    SUBSCRIPTION_READ = "subscription:read"
+    ENTITLEMENT_READ = "entitlement:read"
+    NOTIFICATION_READ = "notification:read"
+
 
 PERMISSION_CATALOG = (
     PermissionDefinition(
@@ -311,5 +315,17 @@ PERMISSION_CATALOG = (
     PermissionDefinition(
         code=Permissions.PAYMENT_VOID,
         description="Void payments",
+    ),
+    PermissionDefinition(
+        code=Permissions.SUBSCRIPTION_READ,
+        description="Read tenant SaaS subscription",
+    ),
+    PermissionDefinition(
+        code=Permissions.ENTITLEMENT_READ,
+        description="Read effective tenant entitlements",
+    ),
+    PermissionDefinition(
+        code=Permissions.NOTIFICATION_READ,
+        description="Read tenant notification delivery history",
     ),
 )

@@ -26,6 +26,7 @@ from app.modules.identity.application.ports.user_repository import UserRepositor
 from app.modules.ledger.application.ports.repositories import (
     LedgerAccountRepository,
 )
+from app.modules.saas.application.ports.repository import SubscriptionRepository
 
 
 class UnitOfWork(Protocol):
@@ -70,3 +71,6 @@ class UnitOfWork(Protocol):
 
     @property
     def ledger_accounts(self) -> LedgerAccountRepository: ...
+
+    @property
+    def subscriptions(self) -> SubscriptionRepository: ...

@@ -42,6 +42,7 @@ from app.modules.shipments.domain.enums import (
     WeightUnit,
 )
 from app.modules.shipments.infrastructure.models.shipment import Shipment
+from tests.integration.rls import set_session_tenant_context
 
 
 async def cleanup_test_data(
@@ -88,34 +89,36 @@ async def cleanup_test_data(
                 )
             )
 
-            if tenant_ids:
+            for tenant_id in tenant_ids:
+                await set_session_tenant_context(session, tenant_id)
+
                 await session.execute(
                     delete(ShipmentLabel).where(
-                        ShipmentLabel.tenant_id.in_(tenant_ids),
+                        ShipmentLabel.tenant_id == tenant_id,
                     )
                 )
 
                 await session.execute(
                     delete(Document).where(
-                        Document.tenant_id.in_(tenant_ids),
+                        Document.tenant_id == tenant_id,
                     )
                 )
 
                 await session.execute(
                     delete(Shipment).where(
-                        Shipment.tenant_id.in_(tenant_ids),
+                        Shipment.tenant_id == tenant_id,
                     )
                 )
 
                 await session.execute(
                     delete(Customer).where(
-                        Customer.tenant_id.in_(tenant_ids),
+                        Customer.tenant_id == tenant_id,
                     )
                 )
 
                 await session.execute(
                     delete(Location).where(
-                        Location.tenant_id.in_(tenant_ids),
+                        Location.tenant_id == tenant_id,
                     )
                 )
 
@@ -227,6 +230,8 @@ async def create_lifecycle_context(
             )
 
             await session.flush()
+
+            await set_session_tenant_context(session, tenant.id)
 
             permissions: list[Permission] = []
 
@@ -354,6 +359,8 @@ async def create_foreign_shipment(
             session.add(tenant)
             await session.flush()
 
+            await set_session_tenant_context(session, tenant.id)
+
             customer = Customer(
                 tenant_id=tenant.id,
                 name="Foreign Lifecycle Customer",
@@ -440,6 +447,8 @@ async def create_document(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(session, tenant_id)
+
             document = Document(
                 tenant_id=tenant_id,
                 shipment_id=shipment_id,
@@ -481,6 +490,8 @@ async def create_shipment_label(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(session, tenant_id)
+
             label = ShipmentLabel(
                 tenant_id=tenant_id,
                 shipment_id=shipment_id,
@@ -503,6 +514,7 @@ async def create_shipment_label(
 
 async def get_document(
     *,
+    tenant_id: UUID,
     document_id: UUID,
 ) -> Document:
     settings = get_settings()
@@ -521,6 +533,8 @@ async def get_document(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(session, tenant_id)
+
             document = await session.get(
                 Document,
                 document_id,
@@ -614,6 +628,7 @@ async def test_complete_shipment_label_endpoint_generates_label() -> None:
         assert body["tracking_number"] == "TRACK-12345"
 
         persisted_document = await get_document(
+            tenant_id=tenant.id,
             document_id=document.id,
         )
 
@@ -838,6 +853,8 @@ async def test_complete_shipment_label_endpoint_rejects_document_from_different_
 
         try:
             async with session_factory() as session:
+                await set_session_tenant_context(session, tenant.id)
+
                 customer = await session.scalar(
                     select(Customer).where(
                         Customer.tenant_id == tenant.id,

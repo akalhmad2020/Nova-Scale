@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from typing import Annotated
 from uuid import UUID
 
@@ -7,6 +7,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.config import get_settings
 from app.core.database import SessionFactory
+from app.core.tenant_context import reset_current_tenant_id, set_current_tenant_id
 from app.modules.identity.api.dependencies import (
     get_active_membership_use_case,
     get_check_permission_use_case,
@@ -99,9 +100,9 @@ async def get_current_membership(
         GetActiveMembership,
         Depends(get_active_membership_use_case),
     ],
-) -> Membership:
+) -> AsyncIterator[Membership]:
     try:
-        return await use_case.execute(
+        membership = await use_case.execute(
             GetActiveMembershipQuery(
                 user_id=current_user.id,
                 tenant_id=tenant_id,
@@ -121,6 +122,13 @@ async def get_current_membership(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access to this tenant is forbidden",
         ) from exc
+
+    token = set_current_tenant_id(tenant_id)
+
+    try:
+        yield membership
+    finally:
+        reset_current_tenant_id(token)
 
 
 def require_permission(

@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     hsts_enabled: bool = False
 
     database_url: str = (
+        "postgresql+asyncpg://novascale_app:novascale_app_local_change_me@localhost:5432/novascale"
+    )
+
+    migration_database_url: str = (
         "postgresql+asyncpg://novascale:novascale_local_change_me@localhost:5432/novascale"
     )
 
@@ -160,10 +164,34 @@ class Settings(BaseSettings):
         le=86400,
     )
 
+    notification_smtp_host: str | None = None
+    notification_smtp_port: int = Field(
+        default=587,
+        ge=1,
+        le=65535,
+    )
+    notification_smtp_username: str | None = None
+    notification_smtp_password: str | None = None
+    notification_smtp_from_address: str | None = None
+    notification_smtp_starttls: bool = True
+    notification_provider_timeout_seconds: float = Field(
+        default=15.0,
+        ge=1.0,
+        le=120.0,
+    )
+    notification_webhook_allowed_hosts: list[str] = Field(
+        default_factory=list,
+    )
+
     ai_llm_provider: Literal["ollama"] = "ollama"
     ai_ollama_base_url: str = "http://host.docker.internal:11434"
     ai_ollama_model: str = "qwen2.5:3b"
-    ai_ollama_timeout_seconds: float = Field(default=180.0, ge=1.0, le=600.0)
+    ai_ollama_timeout_seconds: float = Field(
+        default=180.0,
+        ge=1.0,
+        le=600.0,
+    )
+
     ai_embedding_provider: Literal["ollama"] = "ollama"
     ai_ollama_embedding_model: str = "nomic-embed-text"
     ai_document_storage_root: str = "./storage"

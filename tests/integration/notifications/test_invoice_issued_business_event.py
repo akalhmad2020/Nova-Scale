@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
 )
 
+from app.core.tenant_context import reset_current_tenant_id, set_current_tenant_id
 from app.main import app
 from app.modules.customers.infrastructure.models.customer import Customer
 from app.modules.identity.domain.permissions import Permissions
@@ -43,6 +44,7 @@ from tests.integration.billing.test_invoice_lifecycle_api import (
     create_lifecycle_context,
     login_and_get_access_token,
 )
+from tests.integration.rls import set_session_tenant_context
 
 pytestmark = pytest.mark.integration
 
@@ -52,10 +54,13 @@ EVENT_TYPE = "invoice.issued"
 async def set_customer_email(
     session_factory: async_sessionmaker[AsyncSession],
     *,
+    tenant_id: UUID,
     customer_id: UUID,
     email: str | None,
 ) -> None:
     async with session_factory() as session:
+        await set_session_tenant_context(session, tenant_id)
+
         customer = await session.get(
             Customer,
             customer_id,
@@ -221,6 +226,7 @@ async def test_invoice_issued_business_event_creates_notification(
     try:
         await set_customer_email(
             session_factory,
+            tenant_id=tenant.id,
             customer_id=customer.id,
             email=customer_email,
         )
@@ -277,9 +283,13 @@ async def test_invoice_issued_business_event_creates_notification(
 
         now = datetime.now(UTC)
 
-        processed_count = await service.process_batch(
-            now=now,
-        )
+        tenant_context_token = set_current_tenant_id(tenant.id)
+        try:
+            processed_count = await service.process_batch(
+                now=now,
+            )
+        finally:
+            reset_current_tenant_id(tenant_context_token)
 
         assert processed_count == 1
 
@@ -353,6 +363,7 @@ async def test_invoice_issued_without_customer_email_is_released_for_retry(
     try:
         await set_customer_email(
             session_factory,
+            tenant_id=tenant.id,
             customer_id=customer.id,
             email=None,
         )
@@ -389,9 +400,13 @@ async def test_invoice_issued_without_customer_email_is_released_for_retry(
 
         now = datetime.now(UTC)
 
-        processed_count = await service.process_batch(
-            now=now,
-        )
+        tenant_context_token = set_current_tenant_id(tenant.id)
+        try:
+            processed_count = await service.process_batch(
+                now=now,
+            )
+        finally:
+            reset_current_tenant_id(tenant_context_token)
 
         assert processed_count == 1
 

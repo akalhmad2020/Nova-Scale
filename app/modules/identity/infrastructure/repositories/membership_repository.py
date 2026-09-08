@@ -1,8 +1,9 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.identity.domain.enums import MembershipStatus
 from app.modules.identity.infrastructure.models.membership import Membership
 
 
@@ -66,3 +67,20 @@ class MembershipRepository:
         result = await self._session.execute(statement)
 
         return list(result.scalars().all())
+
+    async def count_active_by_tenant(
+        self,
+        tenant_id: UUID,
+    ) -> int:
+        statement = (
+            select(func.count())
+            .select_from(Membership)
+            .where(
+                Membership.tenant_id == tenant_id,
+                Membership.status == MembershipStatus.ACTIVE,
+                Membership.deleted_at.is_(None),
+            )
+        )
+
+        result = await self._session.execute(statement)
+        return int(result.scalar_one())

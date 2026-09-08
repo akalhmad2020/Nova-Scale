@@ -113,7 +113,7 @@ async def run_worker() -> None:
     )
 
     provider_registry = build_notification_provider_registry(
-        app_env=settings.app_env,
+        settings=settings,
     )
 
     processor = NotificationDeliveryProcessor(

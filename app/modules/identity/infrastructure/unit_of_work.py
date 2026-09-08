@@ -29,6 +29,7 @@ from app.modules.identity.infrastructure.repositories.user_repository import (
 from app.modules.ledger.infrastructure.repositories import (
     SQLAlchemyLedgerAccountRepository,
 )
+from app.modules.saas.infrastructure.repository import SQLAlchemySubscriptionRepository
 
 
 class SQLAlchemyUnitOfWork:
@@ -48,6 +49,7 @@ class SQLAlchemyUnitOfWork:
         self._role_permissions: SQLAlchemyRolePermissionRepository | None = None
         self._invitations: SQLAlchemyInvitationRepository | None = None
         self._ledger_accounts: SQLAlchemyLedgerAccountRepository | None = None
+        self._subscriptions: SQLAlchemySubscriptionRepository | None = None
 
     @property
     def users(self) -> SQLAlchemyUserRepository:
@@ -76,6 +78,7 @@ class SQLAlchemyUnitOfWork:
         self._role_permissions = SQLAlchemyRolePermissionRepository(session)
         self._invitations = SQLAlchemyInvitationRepository(session)
         self._ledger_accounts = SQLAlchemyLedgerAccountRepository(session)
+        self._subscriptions = SQLAlchemySubscriptionRepository(session)
 
         return self
 
@@ -94,6 +97,7 @@ class SQLAlchemyUnitOfWork:
         self._role_permissions = None
         self._invitations = None
         self._ledger_accounts = None
+        self._subscriptions = None
 
         if session is None:
             return
@@ -173,3 +177,10 @@ class SQLAlchemyUnitOfWork:
             raise RuntimeError("Unit of work is not active")
 
         return self._ledger_accounts
+
+    @property
+    def subscriptions(self) -> SQLAlchemySubscriptionRepository:
+        if self._subscriptions is None:
+            raise RuntimeError("Unit of work is not active")
+
+        return self._subscriptions

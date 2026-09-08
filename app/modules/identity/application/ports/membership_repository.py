@@ -30,3 +30,8 @@ class MembershipRepository(Protocol):
         self,
         tenant_id: UUID,
     ) -> list[Membership]: ...
+
+    async def count_active_by_tenant(
+        self,
+        tenant_id: UUID,
+    ) -> int: ...

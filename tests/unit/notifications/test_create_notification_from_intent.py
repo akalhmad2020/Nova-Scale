@@ -34,6 +34,16 @@ class FakeNotificationRepository:
     async def add(self, notification: Notification) -> None:
         self.items.append(notification)
 
+    async def list_by_tenant(
+        self,
+        *,
+        tenant_id: UUID,
+        limit: int = 50,
+    ) -> list[Notification]:
+        return [notification for notification in self.items if notification.tenant_id == tenant_id][
+            :limit
+        ]
+
     async def get_by_id(
         self,
         *,

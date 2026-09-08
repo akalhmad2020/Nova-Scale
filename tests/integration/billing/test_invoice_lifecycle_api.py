@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -47,6 +47,26 @@ from app.modules.ledger.infrastructure.models import (
 from app.shared.outbox.infrastructure.models.outbox_message import (
     OutboxMessage,
 )
+
+
+async def set_session_tenant_context(
+    session: AsyncSession,
+    tenant_id: UUID,
+) -> None:
+    await session.execute(
+        text(
+            """
+            SELECT set_config(
+                'app.current_tenant_id',
+                :tenant_id,
+                true
+            )
+            """
+        ),
+        {
+            "tenant_id": str(tenant_id),
+        },
+    )
 
 
 async def cleanup_test_data(
@@ -93,52 +113,57 @@ async def cleanup_test_data(
                 )
             )
 
-            if tenant_ids:
+            for tenant_id in tenant_ids:
+                await set_session_tenant_context(
+                    session,
+                    tenant_id,
+                )
+
                 await session.execute(
                     delete(AuditLog).where(
-                        AuditLog.tenant_id.in_(tenant_ids),
+                        AuditLog.tenant_id == tenant_id,
                     )
                 )
 
                 await session.execute(
                     delete(OutboxMessage).where(
-                        OutboxMessage.tenant_id.in_(tenant_ids),
+                        OutboxMessage.tenant_id == tenant_id,
                     )
                 )
 
                 await session.execute(
                     delete(JournalLine).where(
-                        JournalLine.tenant_id.in_(tenant_ids),
+                        JournalLine.tenant_id == tenant_id,
                     )
                 )
 
                 await session.execute(
                     delete(JournalEntry).where(
-                        JournalEntry.tenant_id.in_(tenant_ids),
+                        JournalEntry.tenant_id == tenant_id,
                     )
                 )
 
                 await session.execute(
                     delete(LedgerAccount).where(
-                        LedgerAccount.tenant_id.in_(tenant_ids),
+                        LedgerAccount.tenant_id == tenant_id,
                     )
                 )
 
                 await session.execute(
                     delete(InvoiceLine).where(
-                        InvoiceLine.tenant_id.in_(tenant_ids),
+                        InvoiceLine.tenant_id == tenant_id,
                     )
                 )
 
                 await session.execute(
                     delete(Invoice).where(
-                        Invoice.tenant_id.in_(tenant_ids),
+                        Invoice.tenant_id == tenant_id,
                     )
                 )
 
                 await session.execute(
                     delete(Customer).where(
-                        Customer.tenant_id.in_(tenant_ids),
+                        Customer.tenant_id == tenant_id,
                     )
                 )
 
@@ -251,6 +276,11 @@ async def create_lifecycle_context(
 
             await session.flush()
 
+            await set_session_tenant_context(
+                session,
+                tenant.id,
+            )
+
             permissions: list[Permission] = []
 
             for permission_code in permission_codes:
@@ -324,6 +354,11 @@ async def create_ledger_system_accounts(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(
+                session,
+                tenant_id,
+            )
+
             session.add_all(
                 [
                     LedgerAccount(
@@ -389,6 +424,11 @@ async def get_invoice_journal(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(
+                session,
+                tenant_id,
+            )
+
             entry = await session.scalar(
                 select(JournalEntry).where(
                     JournalEntry.tenant_id == tenant_id,
@@ -441,6 +481,11 @@ async def delete_invoice_journal_lines(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(
+                session,
+                tenant_id,
+            )
+
             entry = await session.scalar(
                 select(JournalEntry).where(
                     JournalEntry.tenant_id == tenant_id,
@@ -488,6 +533,11 @@ async def create_invoice(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(
+                session,
+                tenant_id,
+            )
+
             subtotal = Decimal("25.00") if with_line else Decimal("0.00")
             tax_amount = Decimal("5.00")
             total_amount = subtotal + tax_amount
@@ -563,6 +613,11 @@ async def create_foreign_invoice(
             session.add(tenant)
             await session.flush()
 
+            await set_session_tenant_context(
+                session,
+                tenant.id,
+            )
+
             customer = Customer(
                 tenant_id=tenant.id,
                 name="Foreign Billing Lifecycle Customer",
@@ -609,6 +664,7 @@ async def create_foreign_invoice(
 
 async def get_invoice(
     *,
+    tenant_id: UUID,
     invoice_id: UUID,
 ) -> Invoice:
     settings = get_settings()
@@ -627,6 +683,11 @@ async def get_invoice(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(
+                session,
+                tenant_id,
+            )
+
             invoice = await session.get(
                 Invoice,
                 invoice_id,
@@ -715,6 +776,7 @@ async def test_issue_invoice_endpoint_issues_draft_invoice() -> None:
         assert body["paid_at"] is None
 
         persisted_invoice = await get_invoice(
+            tenant_id=tenant.id,
             invoice_id=invoice.id,
         )
 
@@ -750,6 +812,11 @@ async def test_issue_invoice_endpoint_issues_draft_invoice() -> None:
 
         try:
             async with session_factory() as session:
+                await set_session_tenant_context(
+                    session,
+                    tenant.id,
+                )
+
                 accounts = list(
                     (
                         await session.scalars(
@@ -881,6 +948,7 @@ async def test_issue_invoice_endpoint_requires_at_least_one_line() -> None:
         assert response.status_code == 409
 
         persisted_invoice = await get_invoice(
+            tenant_id=tenant.id,
             invoice_id=invoice.id,
         )
 
@@ -1029,6 +1097,7 @@ async def test_void_invoice_endpoint_voids_allowed_invoice(
         assert response.json()["status"] == InvoiceStatus.VOID.value
 
         persisted_invoice = await get_invoice(
+            tenant_id=tenant.id,
             invoice_id=invoice.id,
         )
 
@@ -1104,6 +1173,11 @@ async def test_void_invoice_endpoint_voids_allowed_invoice(
                 engine,
                 expire_on_commit=False,
             )() as session:
+                await set_session_tenant_context(
+                    session,
+                    tenant.id,
+                )
+
                 persisted_user = await session.scalar(
                     select(User).where(
                         User.email == email,
@@ -1196,6 +1270,7 @@ async def test_void_invoice_endpoint_rejects_paid_invoice() -> None:
         assert response.status_code == 409
 
         persisted_invoice = await get_invoice(
+            tenant_id=tenant.id,
             invoice_id=invoice.id,
         )
 
@@ -1213,6 +1288,11 @@ async def test_void_invoice_endpoint_rejects_paid_invoice() -> None:
                 engine,
                 expire_on_commit=False,
             )() as session:
+                await set_session_tenant_context(
+                    session,
+                    tenant.id,
+                )
+
                 audit_log = await session.scalar(
                     select(AuditLog).where(
                         AuditLog.tenant_id == tenant.id,
@@ -1357,6 +1437,11 @@ async def deactivate_ledger_account(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(
+                session,
+                tenant_id,
+            )
+
             account = await session.scalar(
                 select(LedgerAccount).where(
                     LedgerAccount.tenant_id == tenant_id,
@@ -1427,6 +1512,7 @@ async def test_issue_invoice_rolls_back_when_ledger_account_is_inactive() -> Non
         }
 
         persisted_invoice = await get_invoice(
+            tenant_id=tenant.id,
             invoice_id=invoice.id,
         )
 
@@ -1458,6 +1544,11 @@ async def test_issue_invoice_rolls_back_when_ledger_account_is_inactive() -> Non
 
         try:
             async with session_factory() as session:
+                await set_session_tenant_context(
+                    session,
+                    tenant.id,
+                )
+
                 audit_log = await session.scalar(
                     select(AuditLog).where(
                         AuditLog.tenant_id == tenant.id,
@@ -1557,6 +1648,7 @@ async def test_void_issued_invoice_rolls_back_when_issued_journal_is_inconsisten
         }
 
         persisted_invoice = await get_invoice(
+            tenant_id=tenant.id,
             invoice_id=invoice.id,
         )
 
@@ -1583,6 +1675,11 @@ async def test_void_issued_invoice_rolls_back_when_issued_journal_is_inconsisten
                 engine,
                 expire_on_commit=False,
             )() as session:
+                await set_session_tenant_context(
+                    session,
+                    tenant.id,
+                )
+
                 audit_log = await session.scalar(
                     select(AuditLog).where(
                         AuditLog.tenant_id == tenant.id,

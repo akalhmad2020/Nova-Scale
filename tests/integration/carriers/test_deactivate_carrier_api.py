@@ -31,6 +31,7 @@ from app.modules.identity.infrastructure.models.user import User
 from app.modules.identity.infrastructure.security.password_hasher import (
     Argon2PasswordHasher,
 )
+from tests.integration.rls import set_session_tenant_context
 
 
 async def cleanup_test_data(
@@ -65,12 +66,14 @@ async def cleanup_test_data(
 
             role_id = await session.scalar(select(Role.id).where(Role.name == role_name))
 
-            if tenant_ids:
+            for tenant_id in tenant_ids:
+                await set_session_tenant_context(session, tenant_id)
+
                 await session.execute(
-                    delete(CarrierService).where(CarrierService.tenant_id.in_(tenant_ids))
+                    delete(CarrierService).where(CarrierService.tenant_id == tenant_id)
                 )
 
-                await session.execute(delete(Carrier).where(Carrier.tenant_id.in_(tenant_ids)))
+                await session.execute(delete(Carrier).where(Carrier.tenant_id == tenant_id))
 
             if user_id is not None:
                 await session.execute(delete(AuthSession).where(AuthSession.user_id == user_id))
@@ -168,6 +171,8 @@ async def create_deactivate_context(
 
             await session.flush()
 
+            await set_session_tenant_context(session, tenant.id)
+
             session.add(
                 Membership(
                     tenant_id=tenant.id,
@@ -251,6 +256,8 @@ async def create_carrier(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(session, tenant_id)
+
             carrier = Carrier(
                 tenant_id=tenant_id,
                 code=code,

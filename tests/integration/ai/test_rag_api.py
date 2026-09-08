@@ -21,14 +21,20 @@ from app.ai.infrastructure.vector_store.postgres_vector_store import (
 from app.core.config import get_settings
 from app.main import app
 from app.modules.identity.domain.enums import MembershipStatus, TenantStatus
+from app.modules.identity.domain.permissions import Permissions
 from app.modules.identity.infrastructure.models.auth_session import AuthSession
 from app.modules.identity.infrastructure.models.membership import Membership
+from app.modules.identity.infrastructure.models.permission import Permission
 from app.modules.identity.infrastructure.models.role import Role
+from app.modules.identity.infrastructure.models.role_permission import RolePermission
 from app.modules.identity.infrastructure.models.tenant import Tenant
 from app.modules.identity.infrastructure.models.user import User
 from app.modules.identity.infrastructure.security.password_hasher import (
     Argon2PasswordHasher,
 )
+from app.modules.saas.domain.enums import PlanCode, SubscriptionStatus
+from app.modules.saas.infrastructure.models.subscription import TenantSubscription
+from tests.integration.rls import set_session_tenant_context
 
 
 async def create_identity_context(
@@ -84,6 +90,42 @@ async def create_identity_context(
 
             await session.flush()
 
+            await set_session_tenant_context(
+                session,
+                tenant.id,
+            )
+
+            permission = await session.scalar(
+                select(Permission).where(
+                    Permission.code == Permissions.DOCUMENT_READ,
+                )
+            )
+
+            if permission is None:
+                permission = Permission(
+                    code=Permissions.DOCUMENT_READ,
+                    description="Read documents",
+                )
+
+                session.add(permission)
+                await session.flush()
+
+            session.add(
+                TenantSubscription(
+                    tenant_id=tenant.id,
+                    plan_code=PlanCode.PROFESSIONAL,
+                    status=SubscriptionStatus.ACTIVE,
+                    cancel_at_period_end=False,
+                )
+            )
+
+            session.add(
+                RolePermission(
+                    role_id=role.id,
+                    permission_id=permission.id,
+                )
+            )
+
             session.add(
                 Membership(
                     tenant_id=tenant.id,
@@ -96,6 +138,7 @@ async def create_identity_context(
             await session.commit()
 
             return tenant
+
     finally:
         await engine.dispose()
 
@@ -131,23 +174,24 @@ async def create_tenant_without_membership(
             await session.commit()
 
             return tenant
+
     finally:
         await engine.dispose()
 
 
-async def login_and_get_access_token(
+def login_and_get_access_token(
     *,
+    client: TestClient,
     email: str,
     password: str,
 ) -> str:
-    with TestClient(app) as client:
-        response = client.post(
-            "/api/v1/auth/login",
-            json={
-                "email": email,
-                "password": password,
-            },
-        )
+    response = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": email,
+            "password": password,
+        },
+    )
 
     assert response.status_code == 200
 
@@ -180,6 +224,11 @@ async def ingest_test_document(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(
+                session,
+                tenant_id,
+            )
+
             embedding_provider = build_embedding_provider(settings)
 
             vector_store = PostgresVectorStore(
@@ -208,6 +257,7 @@ async def ingest_test_document(
             assert chunk_count > 0
 
             await session.commit()
+
     finally:
         await engine.dispose()
 
@@ -239,28 +289,32 @@ async def cleanup_test_data(
                 )
             )
 
-            await session.execute(
-                delete(RagChunkModel).where(
-                    RagChunkModel.tenant_id.in_(tenant_ids),
-                )
+            role_ids = list(
+                (
+                    await session.execute(
+                        select(Membership.role_id).where(
+                            Membership.tenant_id.in_(tenant_ids),
+                        )
+                    )
+                ).scalars()
             )
+
+            for tenant_id in tenant_ids:
+                await set_session_tenant_context(
+                    session,
+                    tenant_id,
+                )
+
+                await session.execute(
+                    delete(RagChunkModel).where(
+                        RagChunkModel.tenant_id == tenant_id,
+                    )
+                )
 
             if user_id is not None:
                 await session.execute(
                     delete(AuthSession).where(
                         AuthSession.user_id == user_id,
-                    )
-                )
-
-                await session.execute(
-                    delete(Membership).where(
-                        Membership.user_id == user_id,
-                    )
-                )
-
-                await session.execute(
-                    delete(User).where(
-                        User.id == user_id,
                     )
                 )
 
@@ -270,13 +324,48 @@ async def cleanup_test_data(
                 )
             )
 
+            if user_id is not None:
+                await session.execute(
+                    delete(Membership).where(
+                        Membership.user_id == user_id,
+                    )
+                )
+
+            if role_ids:
+                await session.execute(
+                    delete(RolePermission).where(
+                        RolePermission.role_id.in_(role_ids),
+                    )
+                )
+
+            await session.execute(
+                delete(TenantSubscription).where(
+                    TenantSubscription.tenant_id.in_(tenant_ids),
+                )
+            )
+
+            if user_id is not None:
+                await session.execute(
+                    delete(User).where(
+                        User.id == user_id,
+                    )
+                )
+
             await session.execute(
                 delete(Tenant).where(
                     Tenant.id.in_(tenant_ids),
                 )
             )
 
+            if role_ids:
+                await session.execute(
+                    delete(Role).where(
+                        Role.id.in_(role_ids),
+                    )
+                )
+
             await session.commit()
+
     finally:
         await engine.dispose()
 
@@ -307,12 +396,13 @@ async def test_ask_question_endpoint_runs_authenticated_rag_pipeline() -> None:
             ),
         )
 
-        access_token = await login_and_get_access_token(
-            email=email,
-            password=password,
-        )
-
         with TestClient(app) as client:
+            access_token = login_and_get_access_token(
+                client=client,
+                email=email,
+                password=password,
+            )
+
             response = client.post(
                 f"/api/v1/ai/tenants/{tenant.id}/ask",
                 headers={
@@ -324,7 +414,7 @@ async def test_ask_question_endpoint_runs_authenticated_rag_pipeline() -> None:
                 },
             )
 
-        assert response.status_code == 200
+        assert response.status_code == 200, response.text
 
         data = response.json()
 
@@ -366,25 +456,28 @@ async def test_ask_question_endpoint_rejects_cross_tenant_access() -> None:
     )
 
     try:
-        access_token = await login_and_get_access_token(
-            email=email,
-            password=password,
-        )
-
         with TestClient(app) as client:
+            access_token = login_and_get_access_token(
+                client=client,
+                email=email,
+                password=password,
+            )
+
             response = client.post(
                 f"/api/v1/ai/tenants/{tenant_b.id}/ask",
                 headers={
                     "Authorization": f"Bearer {access_token}",
                 },
                 json={
-                    "question": "Show me this tenant's shipment information.",
+                    "question": ("Show me this tenant's shipment information."),
                     "limit": 5,
                 },
             )
 
         assert response.status_code == 403
-        assert response.json() == {"detail": "Access to this tenant is forbidden"}
+        assert response.json() == {
+            "detail": "Access to this tenant is forbidden",
+        }
 
     finally:
         await cleanup_test_data(
@@ -409,4 +502,6 @@ def test_ask_question_endpoint_requires_authentication() -> None:
         )
 
     assert response.status_code == 401
-    assert response.json() == {"detail": "Authentication required"}
+    assert response.json() == {
+        "detail": "Authentication required",
+    }

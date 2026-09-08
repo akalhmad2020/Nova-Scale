@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from app.modules.identity.domain.enums import InvitationStatus, MembershipStatus
 
 
-class RegisterUserRequest(BaseModel):
+class RegisterCompanyRequest(BaseModel):
     email: EmailStr
     password: str = Field(
         min_length=12,
@@ -20,6 +20,25 @@ class RegisterUserRequest(BaseModel):
         min_length=1,
         max_length=100,
     )
+    company_name: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+    company_slug: str = Field(
+        min_length=1,
+        max_length=100,
+    )
+
+
+class RegisterCompanyResponse(BaseModel):
+    user_id: UUID
+    tenant_id: UUID
+    membership_id: UUID
+    email: str
+    first_name: str
+    last_name: str
+    company_name: str
+    company_slug: str
 
 
 class UserResponse(BaseModel):
@@ -73,24 +92,6 @@ class MembershipResponse(BaseModel):
     status: MembershipStatus
 
 
-class CreateTenantRequest(BaseModel):
-    name: str = Field(
-        min_length=1,
-        max_length=200,
-    )
-    slug: str = Field(
-        min_length=1,
-        max_length=100,
-    )
-
-
-class CreateTenantResponse(BaseModel):
-    id: UUID
-    membership_id: UUID
-    name: str
-    slug: str
-
-
 class UserTenantResponse(BaseModel):
     id: UUID
     name: str
@@ -102,6 +103,13 @@ class UserTenantResponse(BaseModel):
 class InviteMemberRequest(BaseModel):
     email: EmailStr
     role_id: UUID
+
+
+class AcceptInvitationRequest(BaseModel):
+    token: str = Field(
+        min_length=1,
+        max_length=512,
+    )
 
 
 class InvitationResponse(BaseModel):

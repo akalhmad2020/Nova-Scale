@@ -9,6 +9,7 @@ from app.ai.infrastructure.vector_store.models import RagChunkModel
 from app.ai.infrastructure.vector_store.postgres_vector_store import (
     PostgresVectorStore,
 )
+from tests.integration.rls import set_session_tenant_context
 
 
 @pytest.mark.integration
@@ -44,6 +45,8 @@ async def test_postgres_vector_store_returns_closest_chunk(
         ),
     )
 
+    await set_session_tenant_context(db_session, tenant_id)
+
     await store.replace_document(
         tenant_id=tenant_id,
         document_id=document_id,
@@ -76,6 +79,8 @@ async def test_postgres_vector_store_isolates_tenants(
         session=db_session,
     )
 
+    await set_session_tenant_context(db_session, tenant_a)
+
     await store.replace_document(
         tenant_id=tenant_a,
         document_id="document-a",
@@ -92,6 +97,8 @@ async def test_postgres_vector_store_isolates_tenants(
         ),
     )
 
+    await set_session_tenant_context(db_session, tenant_b)
+
     await store.replace_document(
         tenant_id=tenant_b,
         document_id="document-b",
@@ -107,6 +114,8 @@ async def test_postgres_vector_store_isolates_tenants(
             ),
         ),
     )
+
+    await set_session_tenant_context(db_session, tenant_a)
 
     results = await store.search(
         tenant_id=tenant_a,
@@ -161,6 +170,8 @@ async def test_postgres_vector_store_replaces_existing_document_chunks(
             embedding=(0.0, 0.0, 1.0) + (0.0,) * 765,
         ),
     )
+
+    await set_session_tenant_context(db_session, tenant_id)
 
     await store.replace_document(
         tenant_id=tenant_id,
@@ -236,6 +247,8 @@ async def test_postgres_vector_store_clears_document_when_replaced_with_no_chunk
             embedding=(0.0, 1.0) + (0.0,) * 766,
         ),
     )
+
+    await set_session_tenant_context(db_session, tenant_id)
 
     await store.replace_document(
         tenant_id=tenant_id,

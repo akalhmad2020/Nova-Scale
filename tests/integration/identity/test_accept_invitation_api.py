@@ -23,6 +23,9 @@ from app.modules.identity.infrastructure.models.membership import Membership
 from app.modules.identity.infrastructure.models.role import Role
 from app.modules.identity.infrastructure.models.tenant import Tenant
 from app.modules.identity.infrastructure.models.user import User
+from app.modules.identity.infrastructure.security.invitation_token_service import (
+    SecureInvitationTokenService,
+)
 from app.modules.identity.infrastructure.security.password_hasher import (
     Argon2PasswordHasher,
 )
@@ -91,7 +94,7 @@ async def create_accept_context(
     role_name: str,
     invitation_status: InvitationStatus = InvitationStatus.PENDING,
     expires_at: datetime | None = None,
-) -> tuple[User, Tenant, Role, Invitation]:
+) -> tuple[User, Tenant, Role, Invitation, str]:
     settings = get_settings()
 
     engine = create_async_engine(
@@ -107,6 +110,7 @@ async def create_accept_context(
     )
 
     password_hasher = Argon2PasswordHasher()
+    invitation_token_service = SecureInvitationTokenService()
 
     try:
         async with session_factory() as session:
@@ -139,19 +143,22 @@ async def create_accept_context(
 
             await session.flush()
 
+            raw_token = invitation_token_service.generate_token()
+
             invitation = Invitation(
                 tenant_id=tenant.id,
                 role_id=role.id,
                 email=invited_email,
+                token_hash=invitation_token_service.hash_token(raw_token),
                 status=invitation_status,
-                expires_at=expires_at or datetime.now(UTC) + timedelta(days=7),
+                expires_at=(expires_at or datetime.now(UTC) + timedelta(days=7)),
             )
 
             session.add(invitation)
 
             await session.commit()
 
-            return user, tenant, role, invitation
+            return user, tenant, role, invitation, raw_token
 
     finally:
         await engine.dispose()
@@ -223,7 +230,7 @@ async def test_accept_invitation_endpoint_creates_membership() -> None:
     tenant_slug = f"accept-tenant-{unique}"
     role_name = f"accept-role-{unique}"
 
-    user, tenant, role, invitation = await create_accept_context(
+    user, tenant, role, _, raw_token = await create_accept_context(
         invited_email=email,
         invited_password=password,
         tenant_slug=tenant_slug,
@@ -238,7 +245,10 @@ async def test_accept_invitation_endpoint_creates_membership() -> None:
 
         with TestClient(app) as client:
             response = client.post(
-                f"/api/v1/invitations/{invitation.id}/accept",
+                "/api/v1/invitations/accept",
+                json={
+                    "token": raw_token,
+                },
                 headers={
                     "Authorization": f"Bearer {access_token}",
                 },
@@ -277,7 +287,7 @@ async def test_accept_invitation_endpoint_marks_invitation_accepted() -> None:
     tenant_slug = f"accepted-tenant-{unique}"
     role_name = f"accepted-role-{unique}"
 
-    _, _, _, invitation = await create_accept_context(
+    _, _, _, invitation, raw_token = await create_accept_context(
         invited_email=email,
         invited_password=password,
         tenant_slug=tenant_slug,
@@ -292,7 +302,10 @@ async def test_accept_invitation_endpoint_marks_invitation_accepted() -> None:
 
         with TestClient(app) as client:
             response = client.post(
-                f"/api/v1/invitations/{invitation.id}/accept",
+                "/api/v1/invitations/accept",
+                json={
+                    "token": raw_token,
+                },
                 headers={
                     "Authorization": f"Bearer {access_token}",
                 },
@@ -345,7 +358,7 @@ async def test_accept_invitation_endpoint_rejects_second_accept() -> None:
     tenant_slug = f"double-tenant-{unique}"
     role_name = f"double-role-{unique}"
 
-    _, _, _, invitation = await create_accept_context(
+    _, _, _, _, raw_token = await create_accept_context(
         invited_email=email,
         invited_password=password,
         tenant_slug=tenant_slug,
@@ -360,14 +373,20 @@ async def test_accept_invitation_endpoint_rejects_second_accept() -> None:
 
         with TestClient(app) as client:
             first_response = client.post(
-                f"/api/v1/invitations/{invitation.id}/accept",
+                "/api/v1/invitations/accept",
+                json={
+                    "token": raw_token,
+                },
                 headers={
                     "Authorization": f"Bearer {access_token}",
                 },
             )
 
             second_response = client.post(
-                f"/api/v1/invitations/{invitation.id}/accept",
+                "/api/v1/invitations/accept",
+                json={
+                    "token": raw_token,
+                },
                 headers={
                     "Authorization": f"Bearer {access_token}",
                 },
@@ -397,18 +416,21 @@ async def test_accept_invitation_endpoint_rejects_wrong_user() -> None:
     tenant_slug = f"wrong-user-tenant-{unique}"
     role_name = f"wrong-user-role-{unique}"
 
-    _, _, _, invitation = await create_accept_context(
+    _, _, _, _, raw_token = await create_accept_context(
         invited_email=invited_email,
         invited_password=password,
         tenant_slug=tenant_slug,
         role_name=role_name,
     )
 
+    temporary_tenant_slug = f"temporary-{unique}"
+    temporary_role_name = f"temporary-role-{unique}"
+
     await create_accept_context(
         invited_email=wrong_email,
         invited_password=password,
-        tenant_slug=f"temporary-{unique}",
-        role_name=f"temporary-role-{unique}",
+        tenant_slug=temporary_tenant_slug,
+        role_name=temporary_role_name,
     )
 
     try:
@@ -419,7 +441,10 @@ async def test_accept_invitation_endpoint_rejects_wrong_user() -> None:
 
         with TestClient(app) as client:
             response = client.post(
-                f"/api/v1/invitations/{invitation.id}/accept",
+                "/api/v1/invitations/accept",
+                json={
+                    "token": raw_token,
+                },
                 headers={
                     "Authorization": f"Bearer {access_token}",
                 },
@@ -441,8 +466,8 @@ async def test_accept_invitation_endpoint_rejects_wrong_user() -> None:
 
         await cleanup_test_data(
             emails=[wrong_email],
-            tenant_slug=f"temporary-{unique}",
-            role_name=f"temporary-role-{unique}",
+            tenant_slug=temporary_tenant_slug,
+            role_name=temporary_role_name,
         )
 
 
@@ -455,7 +480,7 @@ async def test_accept_invitation_endpoint_rejects_expired_invitation() -> None:
     tenant_slug = f"expired-tenant-{unique}"
     role_name = f"expired-role-{unique}"
 
-    _, _, _, invitation = await create_accept_context(
+    _, _, _, _, raw_token = await create_accept_context(
         invited_email=email,
         invited_password=password,
         tenant_slug=tenant_slug,
@@ -471,13 +496,17 @@ async def test_accept_invitation_endpoint_rejects_expired_invitation() -> None:
 
         with TestClient(app) as client:
             response = client.post(
-                f"/api/v1/invitations/{invitation.id}/accept",
+                "/api/v1/invitations/accept",
+                json={
+                    "token": raw_token,
+                },
                 headers={
                     "Authorization": f"Bearer {access_token}",
                 },
             )
 
         assert response.status_code == 410
+
         assert response.json() == {"detail": "Invitation has expired"}
 
     finally:

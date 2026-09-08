@@ -1,5 +1,6 @@
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,16 +11,21 @@ from app.modules.audit.infrastructure.repositories.sqlalchemy import (
     SQLAlchemyAuditLogRepository,
 )
 
+SetTenantContext = Callable[[UUID], Awaitable[None]]
+
 
 @pytest.mark.integration
 async def test_audit_repository_adds_and_reads_audit_log(
     db_session: AsyncSession,
+    set_tenant_context: SetTenantContext,
 ) -> None:
     repository = SQLAlchemyAuditLogRepository(db_session)
 
     tenant_id = uuid4()
     actor_id = uuid4()
     resource_id = uuid4()
+
+    await set_tenant_context(tenant_id)
 
     audit_log = AuditLog(
         tenant_id=tenant_id,
@@ -57,11 +63,14 @@ async def test_audit_repository_adds_and_reads_audit_log(
 @pytest.mark.integration
 async def test_audit_repository_get_by_id_is_tenant_scoped(
     db_session: AsyncSession,
+    set_tenant_context: SetTenantContext,
 ) -> None:
     repository = SQLAlchemyAuditLogRepository(db_session)
 
     tenant_id = uuid4()
     other_tenant_id = uuid4()
+
+    await set_tenant_context(tenant_id)
 
     audit_log = AuditLog(
         tenant_id=tenant_id,
@@ -77,6 +86,8 @@ async def test_audit_repository_get_by_id_is_tenant_scoped(
 
     await repository.add(audit_log)
 
+    await set_tenant_context(other_tenant_id)
+
     stored_audit_log = await repository.get_by_id(
         tenant_id=other_tenant_id,
         audit_log_id=audit_log.id,
@@ -88,6 +99,7 @@ async def test_audit_repository_get_by_id_is_tenant_scoped(
 @pytest.mark.integration
 async def test_audit_repository_lists_only_requested_tenant(
     db_session: AsyncSession,
+    set_tenant_context: SetTenantContext,
 ) -> None:
     repository = SQLAlchemyAuditLogRepository(db_session)
 
@@ -130,9 +142,16 @@ async def test_audit_repository_lists_only_requested_tenant(
         occurred_at=datetime.now(UTC),
     )
 
+    await set_tenant_context(tenant_id)
+
     await repository.add(first_log)
     await repository.add(second_log)
+
+    await set_tenant_context(other_tenant_id)
+
     await repository.add(other_tenant_log)
+
+    await set_tenant_context(tenant_id)
 
     results = await repository.list_for_tenant(
         tenant_id=tenant_id,
@@ -148,12 +167,15 @@ async def test_audit_repository_lists_only_requested_tenant(
 @pytest.mark.integration
 async def test_audit_repository_filters_by_actor_and_action(
     db_session: AsyncSession,
+    set_tenant_context: SetTenantContext,
 ) -> None:
     repository = SQLAlchemyAuditLogRepository(db_session)
 
     tenant_id = uuid4()
     actor_id = uuid4()
     other_actor_id = uuid4()
+
+    await set_tenant_context(tenant_id)
 
     matching_log = AuditLog(
         tenant_id=tenant_id,
@@ -207,11 +229,14 @@ async def test_audit_repository_filters_by_actor_and_action(
 @pytest.mark.integration
 async def test_audit_repository_filters_by_resource(
     db_session: AsyncSession,
+    set_tenant_context: SetTenantContext,
 ) -> None:
     repository = SQLAlchemyAuditLogRepository(db_session)
 
     tenant_id = uuid4()
     resource_id = uuid4()
+
+    await set_tenant_context(tenant_id)
 
     matching_log = AuditLog(
         tenant_id=tenant_id,
@@ -252,11 +277,14 @@ async def test_audit_repository_filters_by_resource(
 @pytest.mark.integration
 async def test_audit_repository_filters_by_occurred_at_range(
     db_session: AsyncSession,
+    set_tenant_context: SetTenantContext,
 ) -> None:
     repository = SQLAlchemyAuditLogRepository(db_session)
 
     tenant_id = uuid4()
     now = datetime.now(UTC)
+
+    await set_tenant_context(tenant_id)
 
     older_log = AuditLog(
         tenant_id=tenant_id,
@@ -310,11 +338,14 @@ async def test_audit_repository_filters_by_occurred_at_range(
 @pytest.mark.integration
 async def test_audit_repository_orders_newest_first(
     db_session: AsyncSession,
+    set_tenant_context: SetTenantContext,
 ) -> None:
     repository = SQLAlchemyAuditLogRepository(db_session)
 
     tenant_id = uuid4()
     now = datetime.now(UTC)
+
+    await set_tenant_context(tenant_id)
 
     older_log = AuditLog(
         tenant_id=tenant_id,
@@ -348,7 +379,13 @@ async def test_audit_repository_orders_newest_first(
     )
 
     relevant_results = [
-        audit_log for audit_log in results if audit_log.id in {older_log.id, newer_log.id}
+        audit_log
+        for audit_log in results
+        if audit_log.id
+        in {
+            older_log.id,
+            newer_log.id,
+        }
     ]
 
     assert [audit_log.id for audit_log in relevant_results] == [

@@ -41,6 +41,7 @@ from app.modules.shipments.domain.enums import (
     WeightUnit,
 )
 from app.modules.shipments.infrastructure.models.shipment import Shipment
+from tests.integration.rls import set_session_tenant_context
 
 
 async def cleanup_test_data(
@@ -75,19 +76,56 @@ async def cleanup_test_data(
 
             role_id = await session.scalar(select(Role.id).where(Role.name == role_name))
 
-            if tenant_ids:
+            for tenant_id in tenant_ids:
+                await set_session_tenant_context(session, tenant_id)
+
                 await session.execute(
-                    delete(ShipmentLabel).where(ShipmentLabel.tenant_id.in_(tenant_ids))
+                    delete(ShipmentLabel).where(
+                        ShipmentLabel.tenant_id == tenant_id,
+                    )
                 )
-                await session.execute(delete(Document).where(Document.tenant_id.in_(tenant_ids)))
-                await session.execute(delete(Package).where(Package.tenant_id.in_(tenant_ids)))
+
                 await session.execute(
-                    delete(CarrierService).where(CarrierService.tenant_id.in_(tenant_ids))
+                    delete(Document).where(
+                        Document.tenant_id == tenant_id,
+                    )
                 )
-                await session.execute(delete(Carrier).where(Carrier.tenant_id.in_(tenant_ids)))
-                await session.execute(delete(Shipment).where(Shipment.tenant_id.in_(tenant_ids)))
-                await session.execute(delete(Customer).where(Customer.tenant_id.in_(tenant_ids)))
-                await session.execute(delete(Location).where(Location.tenant_id.in_(tenant_ids)))
+
+                await session.execute(
+                    delete(Package).where(
+                        Package.tenant_id == tenant_id,
+                    )
+                )
+
+                await session.execute(
+                    delete(CarrierService).where(
+                        CarrierService.tenant_id == tenant_id,
+                    )
+                )
+
+                await session.execute(
+                    delete(Carrier).where(
+                        Carrier.tenant_id == tenant_id,
+                    )
+                )
+
+                await session.execute(
+                    delete(Shipment).where(
+                        Shipment.tenant_id == tenant_id,
+                    )
+                )
+
+                await session.execute(
+                    delete(Customer).where(
+                        Customer.tenant_id == tenant_id,
+                    )
+                )
+
+                await session.execute(
+                    delete(Location).where(
+                        Location.tenant_id == tenant_id,
+                    )
+                )
 
             if user_id is not None:
                 await session.execute(delete(AuthSession).where(AuthSession.user_id == user_id))
@@ -176,6 +214,8 @@ async def create_label_context(
 
             session.add_all([user, tenant, role])
             await session.flush()
+
+            await set_session_tenant_context(session, tenant.id)
 
             customer = Customer(
                 tenant_id=tenant.id,
@@ -277,6 +317,8 @@ async def create_foreign_shipment(
             session.add(tenant)
             await session.flush()
 
+            await set_session_tenant_context(session, tenant.id)
+
             customer = Customer(
                 tenant_id=tenant.id,
                 name="Foreign Label Customer",
@@ -352,6 +394,8 @@ async def create_package(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(session, tenant_id)
+
             package = Package(
                 tenant_id=tenant_id,
                 shipment_id=shipment_id,
@@ -390,6 +434,8 @@ async def create_carrier(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(session, tenant_id)
+
             carrier = Carrier(
                 tenant_id=tenant_id,
                 code=code,
@@ -428,6 +474,8 @@ async def create_carrier_service(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(session, tenant_id)
+
             service = CarrierService(
                 tenant_id=tenant_id,
                 carrier_id=carrier_id,
@@ -813,6 +861,8 @@ async def test_create_shipment_label_endpoint_rejects_package_from_different_shi
 
         try:
             async with session_factory() as session:
+                await set_session_tenant_context(session, tenant.id)
+
                 customer = await session.scalar(
                     select(Customer).where(Customer.tenant_id == tenant.id)
                 )

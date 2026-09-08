@@ -3,9 +3,11 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+import app.core.database  # noqa: F401
+from app.core.tenant_context import reset_current_tenant_id, set_current_tenant_id
 from app.modules.billing.domain.enums import InvoiceStatus
 from app.modules.billing.infrastructure.models.invoice import Invoice
 from app.modules.customers.domain.enums import CustomerStatus
@@ -39,6 +41,24 @@ from app.modules.payments.infrastructure.unit_of_work import (
 )
 
 
+async def set_session_tenant_context(
+    session: AsyncSession,
+    tenant_id: UUID,
+) -> None:
+    await session.execute(
+        text(
+            """
+            SELECT set_config(
+                'app.current_tenant_id',
+                :tenant_id,
+                true
+            )
+            """
+        ),
+        {"tenant_id": str(tenant_id)},
+    )
+
+
 @pytest.mark.integration
 async def test_concurrent_post_payments_do_not_overpay_invoice(
     session_factory: async_sessionmaker[AsyncSession],
@@ -59,6 +79,11 @@ async def test_concurrent_post_payments_do_not_overpay_invoice(
         )
         setup_session.add(tenant)
         await setup_session.flush()
+
+        await set_session_tenant_context(
+            setup_session,
+            tenant.id,
+        )
 
         customer = Customer(
             tenant_id=tenant.id,
@@ -174,11 +199,15 @@ async def test_concurrent_post_payments_do_not_overpay_invoice(
         unit_of_work = SQLAlchemyPaymentsUnitOfWork(session_factory)
         use_case = PostPaymentUseCase(unit_of_work)
 
-        return await use_case.execute(
-            tenant_id=tenant_id,
-            payment_id=payment_id,
-            actor_id=uuid4(),
-        )
+        tenant_context_token = set_current_tenant_id(tenant_id)
+        try:
+            return await use_case.execute(
+                tenant_id=tenant_id,
+                payment_id=payment_id,
+                actor_id=uuid4(),
+            )
+        finally:
+            reset_current_tenant_id(tenant_context_token)
 
     try:
         results = await asyncio.gather(
@@ -198,6 +227,11 @@ async def test_concurrent_post_payments_do_not_overpay_invoice(
         )
 
         async with session_factory() as verification_session:
+            await set_session_tenant_context(
+                verification_session,
+                tenant_id,
+            )
+
             persisted_invoice = await verification_session.scalar(
                 select(Invoice).where(
                     Invoice.tenant_id == tenant_id,
@@ -350,6 +384,11 @@ async def test_concurrent_post_payments_do_not_overpay_invoice(
 
     finally:
         async with session_factory() as cleanup_session:
+            await set_session_tenant_context(
+                cleanup_session,
+                tenant_id,
+            )
+
             await cleanup_session.execute(
                 delete(JournalLine).where(
                     JournalLine.tenant_id == tenant_id,

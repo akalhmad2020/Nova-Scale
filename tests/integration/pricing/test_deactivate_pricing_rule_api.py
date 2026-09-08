@@ -28,6 +28,7 @@ from app.modules.identity.infrastructure.security.password_hasher import (
 from app.modules.pricing.domain.enums import PricingRuleStatus
 from app.modules.pricing.infrastructure.models import PricingRule
 from app.modules.shipments.domain.enums import ServiceType
+from tests.integration.rls import set_session_tenant_context
 
 
 async def cleanup_test_data(
@@ -62,10 +63,9 @@ async def cleanup_test_data(
 
             role_id = await session.scalar(select(Role.id).where(Role.name == role_name))
 
-            if tenant_ids:
-                await session.execute(
-                    delete(PricingRule).where(PricingRule.tenant_id.in_(tenant_ids))
-                )
+            for tenant_id in tenant_ids:
+                await set_session_tenant_context(session, tenant_id)
+                await session.execute(delete(PricingRule).where(PricingRule.tenant_id == tenant_id))
 
             if user_id is not None:
                 await session.execute(delete(AuthSession).where(AuthSession.user_id == user_id))
@@ -157,6 +157,8 @@ async def create_deactivate_context(
 
             await session.flush()
 
+            await set_session_tenant_context(session, tenant.id)
+
             session.add(
                 Membership(
                     tenant_id=tenant.id,
@@ -203,6 +205,8 @@ async def create_pricing_rule(
 
     try:
         async with session_factory() as session:
+            await set_session_tenant_context(session, tenant_id)
+
             pricing_rule = PricingRule(
                 tenant_id=tenant_id,
                 name="Deactivate Rule",
@@ -253,6 +257,8 @@ async def create_foreign_rule(
 
             session.add(tenant)
             await session.flush()
+
+            await set_session_tenant_context(session, tenant.id)
 
             pricing_rule = PricingRule(
                 tenant_id=tenant.id,

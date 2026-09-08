@@ -13,6 +13,7 @@ from app.modules.identity.infrastructure.models.role_permission import (
 from app.modules.identity.infrastructure.models.tenant import Tenant
 from app.modules.identity.infrastructure.models.user import User
 from app.modules.ledger.infrastructure.models import LedgerAccount
+from app.modules.saas.infrastructure.models.subscription import TenantSubscription
 
 
 class FakeUserRepository:
@@ -174,6 +175,18 @@ class FakeMembershipRepository:
             if membership.tenant_id == tenant_id and membership.deleted_at is None
         ]
 
+    async def count_active_by_tenant(
+        self,
+        tenant_id: UUID,
+    ) -> int:
+        return sum(
+            1
+            for membership in self.memberships
+            if membership.tenant_id == tenant_id
+            and membership.deleted_at is None
+            and membership.status.value == "active"
+        )
+
 
 class FakeRoleRepository:
     def __init__(self) -> None:
@@ -323,6 +336,16 @@ class FakeInvitationRepository:
             None,
         )
 
+    async def get_by_token_hash(
+        self,
+        token_hash: str,
+    ) -> Invitation | None:
+        for invitation in self.invitations:
+            if invitation.token_hash == token_hash:
+                return invitation
+
+        return None
+
     async def get_pending_by_email_and_tenant(
         self,
         email: str,
@@ -344,6 +367,16 @@ class FakeInvitationRepository:
         invitation: Invitation,
     ) -> None:
         self.invitations.append(invitation)
+
+    async def count_pending_by_tenant(
+        self,
+        tenant_id: UUID,
+    ) -> int:
+        return sum(
+            1
+            for invitation in self.invitations
+            if invitation.tenant_id == tenant_id and invitation.status is InvitationStatus.PENDING
+        )
 
 
 class FakeLedgerAccountRepository:
@@ -391,6 +424,30 @@ class FakeLedgerAccountRepository:
         return [account for account in self.accounts if account.tenant_id == tenant_id]
 
 
+class FakeSubscriptionRepository:
+    def __init__(self) -> None:
+        self.subscriptions: list[TenantSubscription] = []
+
+    async def get_by_tenant(
+        self,
+        tenant_id: UUID,
+    ) -> TenantSubscription | None:
+        return next(
+            (
+                subscription
+                for subscription in self.subscriptions
+                if subscription.tenant_id == tenant_id
+            ),
+            None,
+        )
+
+    def add(
+        self,
+        subscription: TenantSubscription,
+    ) -> None:
+        self.subscriptions.append(subscription)
+
+
 class FakeUnitOfWork:
     def __init__(self) -> None:
         self._users = FakeUserRepository()
@@ -409,6 +466,7 @@ class FakeUnitOfWork:
 
         self._invitations = FakeInvitationRepository()
         self._ledger_accounts = FakeLedgerAccountRepository()
+        self._subscriptions = FakeSubscriptionRepository()
 
     @property
     def users(self) -> FakeUserRepository:
@@ -466,3 +524,7 @@ class FakeUnitOfWork:
     @property
     def ledger_accounts(self) -> FakeLedgerAccountRepository:
         return self._ledger_accounts
+
+    @property
+    def subscriptions(self) -> FakeSubscriptionRepository:
+        return self._subscriptions

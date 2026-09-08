@@ -33,6 +33,16 @@ class FakeNotificationRepository:
         self.raise_idempotency_conflict_on_add = False
         self.existing_after_conflict: Notification | None = None
 
+    async def list_by_tenant(
+        self,
+        *,
+        tenant_id: UUID,
+        limit: int = 50,
+    ) -> list[Notification]:
+        return [notification for notification in self.items if notification.tenant_id == tenant_id][
+            :limit
+        ]
+
     async def add(self, notification: Notification) -> None:
         if self.fail_on_add:
             raise RuntimeError("notification repository failure")
