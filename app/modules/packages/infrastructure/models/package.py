@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy import (
     CheckConstraint,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Numeric,
     String,
@@ -40,6 +41,12 @@ class Package(
         UniqueConstraint(
             "shipment_id",
             "package_number",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "shipment_id"],
+            ["shipments.tenant_id", "shipments.id"],
+            name="fk_packages_tenant_shipment",
+            ondelete="RESTRICT",
         ),
         CheckConstraint(
             "weight > 0",
@@ -78,10 +85,6 @@ class Package(
 
     shipment_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey(
-            "shipments.id",
-            ondelete="RESTRICT",
-        ),
         nullable=False,
     )
 

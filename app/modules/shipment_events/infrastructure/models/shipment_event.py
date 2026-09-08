@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy import (
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     String,
     Text,
@@ -29,6 +30,18 @@ class ShipmentEvent(
     __tablename__ = "shipment_events"
 
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "shipment_id"],
+            ["shipments.tenant_id", "shipments.id"],
+            name="fk_shipment_events_tenant_shipment",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "location_id"],
+            ["locations.tenant_id", "locations.id"],
+            name="fk_shipment_events_tenant_location",
+            ondelete="RESTRICT",
+        ),
         Index(
             "ix_shipment_events_tenant_id",
             "tenant_id",
@@ -59,10 +72,6 @@ class ShipmentEvent(
 
     shipment_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey(
-            "shipments.id",
-            ondelete="RESTRICT",
-        ),
         nullable=False,
     )
 
@@ -78,10 +87,6 @@ class ShipmentEvent(
 
     location_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey(
-            "locations.id",
-            ondelete="RESTRICT",
-        ),
         nullable=True,
     )
 

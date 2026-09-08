@@ -6,6 +6,7 @@ from sqlalchemy import (
 )
 from sqlalchemy import (
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Numeric,
     String,
@@ -46,6 +47,24 @@ class Shipment(
             "tenant_id",
             "tracking_number",
         ),
+        ForeignKeyConstraint(
+            ["tenant_id", "customer_id"],
+            ["customers.tenant_id", "customers.id"],
+            name="fk_shipments_tenant_customer",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "origin_location_id"],
+            ["locations.tenant_id", "locations.id"],
+            name="fk_shipments_tenant_origin_location",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "destination_location_id"],
+            ["locations.tenant_id", "locations.id"],
+            name="fk_shipments_tenant_destination_location",
+            ondelete="RESTRICT",
+        ),
         Index(
             "ix_shipments_tenant_id",
             "tenant_id",
@@ -79,28 +98,16 @@ class Shipment(
 
     customer_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey(
-            "customers.id",
-            ondelete="RESTRICT",
-        ),
         nullable=False,
     )
 
     origin_location_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey(
-            "locations.id",
-            ondelete="RESTRICT",
-        ),
         nullable=False,
     )
 
     destination_location_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey(
-            "locations.id",
-            ondelete="RESTRICT",
-        ),
         nullable=False,
     )
 
