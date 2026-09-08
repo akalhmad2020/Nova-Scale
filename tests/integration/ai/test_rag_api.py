@@ -90,7 +90,10 @@ async def create_identity_context(
 
             await session.flush()
 
-            await set_session_tenant_context(session, tenant.id)
+            await set_session_tenant_context(
+                session,
+                tenant.id,
+            )
 
             permission = await session.scalar(
                 select(Permission).where(
@@ -98,7 +101,14 @@ async def create_identity_context(
                 )
             )
 
-            assert permission is not None
+            if permission is None:
+                permission = Permission(
+                    code=Permissions.DOCUMENT_READ,
+                    description="Read documents",
+                )
+
+                session.add(permission)
+                await session.flush()
 
             session.add(
                 TenantSubscription(
@@ -128,6 +138,7 @@ async def create_identity_context(
             await session.commit()
 
             return tenant
+
     finally:
         await engine.dispose()
 
@@ -163,6 +174,7 @@ async def create_tenant_without_membership(
             await session.commit()
 
             return tenant
+
     finally:
         await engine.dispose()
 
@@ -212,7 +224,10 @@ async def ingest_test_document(
 
     try:
         async with session_factory() as session:
-            await set_session_tenant_context(session, tenant_id)
+            await set_session_tenant_context(
+                session,
+                tenant_id,
+            )
 
             embedding_provider = build_embedding_provider(settings)
 
@@ -242,6 +257,7 @@ async def ingest_test_document(
             assert chunk_count > 0
 
             await session.commit()
+
     finally:
         await engine.dispose()
 
@@ -284,7 +300,11 @@ async def cleanup_test_data(
             )
 
             for tenant_id in tenant_ids:
-                await set_session_tenant_context(session, tenant_id)
+                await set_session_tenant_context(
+                    session,
+                    tenant_id,
+                )
+
                 await session.execute(
                     delete(RagChunkModel).where(
                         RagChunkModel.tenant_id == tenant_id,
@@ -345,6 +365,7 @@ async def cleanup_test_data(
                 )
 
             await session.commit()
+
     finally:
         await engine.dispose()
 
@@ -448,7 +469,7 @@ async def test_ask_question_endpoint_rejects_cross_tenant_access() -> None:
                     "Authorization": f"Bearer {access_token}",
                 },
                 json={
-                    "question": "Show me this tenant's shipment information.",
+                    "question": ("Show me this tenant's shipment information."),
                     "limit": 5,
                 },
             )

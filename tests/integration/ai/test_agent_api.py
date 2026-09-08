@@ -55,22 +55,35 @@ async def create_identity_context(
 
     try:
         async with session_factory() as session:
-            permissions = list(
+            permission_specs = (
                 (
-                    await session.execute(
-                        select(Permission).where(
-                            Permission.code.in_(
-                                [
-                                    Permissions.SHIPMENT_READ,
-                                    Permissions.DOCUMENT_READ,
-                                ]
-                            )
-                        )
-                    )
-                ).scalars()
+                    Permissions.SHIPMENT_READ,
+                    "Read shipments",
+                ),
+                (
+                    Permissions.DOCUMENT_READ,
+                    "Read documents",
+                ),
             )
 
-            assert len(permissions) == 2
+            permissions: list[Permission] = []
+
+            for permission_code, description in permission_specs:
+                permission = await session.scalar(
+                    select(Permission).where(
+                        Permission.code == permission_code,
+                    )
+                )
+
+                if permission is None:
+                    permission = Permission(
+                        code=permission_code,
+                        description=description,
+                    )
+                    session.add(permission)
+                    await session.flush()
+
+                permissions.append(permission)
 
             user = User(
                 email=email,
@@ -130,6 +143,7 @@ async def create_identity_context(
             await session.commit()
 
             return tenant
+
     finally:
         await engine.dispose()
 
@@ -165,6 +179,7 @@ async def create_tenant_without_membership(
             await session.commit()
 
             return tenant
+
     finally:
         await engine.dispose()
 
@@ -283,6 +298,7 @@ async def cleanup_test_data(
                 )
 
             await session.commit()
+
     finally:
         await engine.dispose()
 
