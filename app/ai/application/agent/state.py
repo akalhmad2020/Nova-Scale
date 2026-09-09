@@ -8,6 +8,7 @@ class AgentState(TypedDict):
     tenant_id: UUID
     question: str
     route: AgentRoute | None
+    shipment_identifier: str | None
     shipment_id: UUID | None
     tool_result: str | None
     answer: str

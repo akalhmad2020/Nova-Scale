@@ -17,6 +17,12 @@ class ShipmentRepository(Protocol):
         tenant_id: UUID,
     ) -> Shipment | None: ...
 
+    async def list_by_reference_and_tenant(
+        self,
+        reference: str,
+        tenant_id: UUID,
+    ) -> list[Shipment]: ...
+
     async def list_by_tenant(
         self,
         tenant_id: UUID,

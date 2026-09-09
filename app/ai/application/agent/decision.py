@@ -1,10 +1,11 @@
 from dataclasses import dataclass
 from typing import Literal
-from uuid import UUID
 
 AgentRoute = Literal[
     "direct_answer",
     "get_shipment",
+    "summarize_shipment",
+    "analyze_shipment_operations",
     "retrieve_context",
 ]
 
@@ -12,4 +13,4 @@ AgentRoute = Literal[
 @dataclass(frozen=True, slots=True)
 class AgentDecision:
     route: AgentRoute
-    shipment_id: UUID | None = None
+    shipment_identifier: str | None = None

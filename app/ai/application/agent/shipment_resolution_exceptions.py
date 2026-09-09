@@ -1,0 +1,2 @@
+class ShipmentIdentifierAmbiguousError(Exception):
+    pass
