@@ -13,22 +13,36 @@ export type ConversationRole =
   | "user"
   | "assistant";
 
-export type AgentConversationMessage = {
-  role: ConversationRole;
-  content: string;
-};
-
-export type AgentConversationContext = {
-  messages: AgentConversationMessage[];
-};
-
 export type AgentRequest = {
   question: string;
+  conversation_id?: string | null;
   continuation?: AgentContinuation | null;
-  conversation_context?: AgentConversationContext | null;
 };
 
 export type AgentResponse = {
   answer: string;
+  continuation?: AgentContinuation | null;
+};
+
+export type AIConversationSummary = {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AIConversationMessage = {
+  id: string;
+  role: ConversationRole;
+  content: string;
+  created_at: string;
+};
+
+export type AIConversationDetail = {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  messages: AIConversationMessage[];
   continuation?: AgentContinuation | null;
 };

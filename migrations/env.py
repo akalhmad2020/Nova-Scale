@@ -6,6 +6,10 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+from app.ai.infrastructure.conversations.models import (  # noqa: F401
+    AIConversation,
+    AIConversationMessage,
+)
 from app.ai.infrastructure.vector_store.models import RagChunkModel  # noqa: F401
 from app.core.config import get_settings
 from app.modules.audit.infrastructure.models import AuditLog  # noqa: F401

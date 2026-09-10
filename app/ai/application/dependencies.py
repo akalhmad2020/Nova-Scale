@@ -16,6 +16,7 @@ from app.ai.application.services.analyze_shipment_operations import (
 )
 from app.ai.application.services.answer_question import AnswerQuestionService
 from app.ai.application.services.chunk_text import ChunkTextService
+from app.ai.application.services.conversation_service import ConversationService
 from app.ai.application.services.embed_document import EmbedDocumentService
 from app.ai.application.services.generate_text import GenerateTextService
 from app.ai.application.services.index_stored_document import (
@@ -34,6 +35,9 @@ from app.ai.infrastructure.agent.langgraph_runtime import (
     LangGraphAgentRuntime,
 )
 from app.ai.infrastructure.agent.llm_agent_planner import LLMAgentPlanner
+from app.ai.infrastructure.conversations.repository import (
+    SQLAlchemyConversationRepository,
+)
 from app.ai.infrastructure.dependencies import (
     build_embedding_provider,
     build_llm_provider,
@@ -136,6 +140,15 @@ def build_answer_question_service(
     return AnswerQuestionService(
         retrieve_context_service=retrieve_context_service,
         generate_text_service=generate_text_service,
+    )
+
+
+def build_conversation_service(
+    *,
+    session: AsyncSession,
+) -> ConversationService:
+    return ConversationService(
+        repository=SQLAlchemyConversationRepository(session),
     )
 
 
