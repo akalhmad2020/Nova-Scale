@@ -15,6 +15,8 @@ def build_llm_provider(
             base_url=settings.ai_ollama_base_url,
             model=settings.ai_ollama_model,
             timeout_seconds=settings.ai_ollama_timeout_seconds,
+            max_attempts=settings.ai_ollama_max_attempts,
+            retry_backoff_seconds=settings.ai_ollama_retry_backoff_seconds,
         )
 
     raise ValueError(f"Unsupported AI LLM provider: {settings.ai_llm_provider}")

@@ -57,6 +57,7 @@ class JsonFormatter(logging.Formatter):
             "completion_tokens",
             "attempt",
             "attempts",
+            "retry_delay_seconds",
         ):
             if hasattr(record, field):
                 payload[field] = getattr(record, field)

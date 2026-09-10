@@ -41,6 +41,9 @@ jobs:
       - name: Mypy
         run: uv run mypy app tests
 
+      - name: AI hardening tests
+        run: uv run pytest tests/unit/ai/test_runtime_hardening.py tests/unit/ai/agent/test_prompt_injection_hardening.py
+
       - name: Unit tests
         run: uv run pytest -m "not integration"
 
@@ -163,4 +166,3 @@ jobs:
             -e DATABASE_URL='postgresql+asyncpg://user:pass@localhost:5432/db' \
             novascale:${{ github.sha }} \
             -c 'python -c "import app.main; print(\"production image import: ok\")"'
-            
