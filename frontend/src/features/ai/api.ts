@@ -1,4 +1,5 @@
 import type {
+  AgentActionMutationResponse,
   AgentRequest,
   AgentResponse,
   AIConversationDetail,
@@ -45,6 +46,32 @@ export async function runAgent(
   );
 
   return (await response.json()) as AgentResponse;
+}
+
+export async function confirmAgentAction(
+  actionId: string,
+): Promise<AgentActionMutationResponse> {
+  const response = await requireOk(
+    await fetch(
+      `/api/ai/actions/${actionId}/confirm`,
+      { method: "POST" },
+    ),
+  );
+
+  return (await response.json()) as AgentActionMutationResponse;
+}
+
+export async function cancelAgentAction(
+  actionId: string,
+): Promise<AgentActionMutationResponse> {
+  const response = await requireOk(
+    await fetch(
+      `/api/ai/actions/${actionId}/cancel`,
+      { method: "POST" },
+    ),
+  );
+
+  return (await response.json()) as AgentActionMutationResponse;
 }
 
 export async function createConversation(): Promise<AIConversationDetail> {

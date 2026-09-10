@@ -1,13 +1,13 @@
 from typing import TypedDict
 from uuid import UUID
 
-from app.ai.application.agent.conversation_context import (
-    ConversationContext,
-)
+from app.ai.application.agent.action_models import AgentActionProposal
+from app.ai.application.agent.conversation_context import ConversationContext
 from app.ai.application.agent.decision import AgentRoute
 from app.ai.application.agent.shipment_resolution_models import (
     MultiShipmentResolutionItem,
 )
+from app.modules.shipments.domain.enums import ShipmentStatus
 
 
 class AgentState(TypedDict):
@@ -27,6 +27,10 @@ class AgentState(TypedDict):
         MultiShipmentResolutionItem,
         ...,
     ]
+
+    target_shipment_status: ShipmentStatus | None
+    shipment_notes: str | None
+    action_proposal: AgentActionProposal | None
 
     continuation_route: AgentRoute | None
     continuation_original_identifier: str | None

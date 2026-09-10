@@ -1,6 +1,7 @@
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from unittest.mock import MagicMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -19,6 +20,9 @@ from app.ai.application.services.analyze_shipment_operations import (
     AnalyzeShipmentOperationsService,
 )
 from app.ai.application.services.generate_text import GenerateTextService
+from app.ai.application.services.prepare_shipment_action import (
+    PrepareShipmentActionService,
+)
 from app.ai.application.services.retrieve_context import RetrieveContextService
 from app.ai.application.services.summarize_shipment import (
     SummarizeShipmentService,
@@ -198,6 +202,9 @@ def build_runtime(
         resolve_shipment_service=build_resolve_shipment_service(),
         get_shipment_tool=GetShipmentTool(
             get_shipment=get_get_shipment_use_case(),
+        ),
+        prepare_shipment_action_service=MagicMock(
+            spec=PrepareShipmentActionService,
         ),
         summarize_shipment_service=summarize_shipment_service,
         analyze_shipment_service=analyze_shipment_service,

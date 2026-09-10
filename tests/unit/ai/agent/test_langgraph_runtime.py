@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from app.ai.application.agent.action_models import AgentActionProposal
 from app.ai.application.agent.authorization import (
     AgentAuthorizationService,
 )
@@ -29,6 +30,9 @@ from app.ai.application.services.analyze_shipment import (
     AnalyzeShipmentService,
 )
 from app.ai.application.services.generate_text import GenerateTextService
+from app.ai.application.services.prepare_shipment_action import (
+    PrepareShipmentActionService,
+)
 from app.ai.application.services.resolve_shipment import ResolveShipmentService
 from app.ai.application.services.retrieve_context import RetrieveContextService
 from app.ai.application.services.summarize_shipment import (
@@ -169,6 +173,17 @@ async def allow_all_permissions(
     return True
 
 
+def make_prepare_shipment_action_service() -> PrepareShipmentActionService:
+    service_mock = MagicMock(
+        spec=PrepareShipmentActionService,
+    )
+
+    return cast(
+        PrepareShipmentActionService,
+        service_mock,
+    )
+
+
 def make_runtime(
     *,
     planner: AgentPlanner,
@@ -176,6 +191,7 @@ def make_runtime(
     llm_provider: FakeLLMProvider,
     summarize_shipment_service: SummarizeShipmentService,
     analyze_shipment_service: AnalyzeShipmentService | None = None,
+    prepare_shipment_action_service: PrepareShipmentActionService | None = None,
     retrieve_context_tool: RetrieveContextTool | None = None,
 ) -> LangGraphAgentRuntime:
     if retrieve_context_tool is None:
@@ -183,6 +199,9 @@ def make_runtime(
 
     if analyze_shipment_service is None:
         analyze_shipment_service, _ = make_analyze_shipment_service()
+
+    if prepare_shipment_action_service is None:
+        prepare_shipment_action_service = make_prepare_shipment_action_service()
 
     return LangGraphAgentRuntime(
         agent_planner=planner,
@@ -194,6 +213,7 @@ def make_runtime(
         ),
         summarize_shipment_service=summarize_shipment_service,
         analyze_shipment_service=analyze_shipment_service,
+        prepare_shipment_action_service=prepare_shipment_action_service,
         retrieve_context_tool=retrieve_context_tool,
         authorization_service=AgentAuthorizationService(
             permission_checker=allow_all_permissions,
@@ -937,6 +957,7 @@ async def test_langgraph_agent_runtime_denies_unauthorized_tool() -> None:
         ),
         summarize_shipment_service=summarize_shipment_service,
         analyze_shipment_service=analyze_shipment_service,
+        prepare_shipment_action_service=make_prepare_shipment_action_service(),
         retrieve_context_tool=make_retrieve_context_tool(),
         generate_text_service=GenerateTextService(
             provider=llm_provider,
@@ -1008,6 +1029,7 @@ async def test_langgraph_agent_runtime_reauthorizes_continuation() -> None:
         ),
         summarize_shipment_service=summarize_shipment_service,
         analyze_shipment_service=analyze_shipment_service,
+        prepare_shipment_action_service=make_prepare_shipment_action_service(),
         retrieve_context_tool=make_retrieve_context_tool(),
         generate_text_service=GenerateTextService(
             provider=llm_provider,
@@ -1660,3 +1682,119 @@ async def test_runtime_logs_planner_fallback_without_prompt_content(
     assert record_fields["attempts"] == 2
 
     assert sensitive_question not in record.getMessage()
+
+
+@pytest.mark.asyncio
+async def test_langgraph_agent_runtime_prepares_status_transition_action() -> None:
+    tenant_id = uuid4()
+    shipment = make_shipment(tenant_id=tenant_id)
+
+    uow = FakeUnitOfWork()
+    uow.shipments.add(shipment)
+
+    statuses = list(ShipmentStatus)
+    target_status = next(status for status in statuses if status != ShipmentStatus(shipment.status))
+
+    planner = FakeAgentPlanner()
+    planner.decision = AgentDecision(
+        route="transition_shipment_status",
+        shipment_identifier=shipment.tracking_number,
+        target_shipment_status=target_status,
+    )
+
+    proposal = AgentActionProposal(
+        action_type="transition_shipment_status",
+        shipment_id=shipment.id,
+        shipment_identifier=shipment.tracking_number,
+        expected_status=ShipmentStatus(shipment.status),
+        target_status=target_status,
+        summary="Transition shipment after confirmation.",
+    )
+
+    prepare_service_mock = MagicMock(
+        spec=PrepareShipmentActionService,
+    )
+    prepare_service_mock.prepare_transition = AsyncMock(
+        return_value=proposal,
+    )
+    prepare_service = cast(
+        PrepareShipmentActionService,
+        prepare_service_mock,
+    )
+
+    summarize_service, _ = make_summarize_shipment_service()
+
+    runtime = make_runtime(
+        planner=planner,
+        uow=uow,
+        llm_provider=FakeLLMProvider(),
+        summarize_shipment_service=summarize_service,
+        prepare_shipment_action_service=prepare_service,
+    )
+
+    result = await runtime.execute_with_context(
+        tenant_id=tenant_id,
+        role_id=TEST_ROLE_ID,
+        question="Move this shipment to the requested status.",
+    )
+
+    assert result.action_proposal == proposal
+    assert result.continuation is None
+    assert "requires explicit confirmation" in result.answer
+
+
+@pytest.mark.asyncio
+async def test_langgraph_agent_runtime_prepares_notes_update_action() -> None:
+    tenant_id = uuid4()
+    shipment = make_shipment(tenant_id=tenant_id)
+
+    uow = FakeUnitOfWork()
+    uow.shipments.add(shipment)
+
+    planner = FakeAgentPlanner()
+    planner.decision = AgentDecision(
+        route="update_shipment_notes",
+        shipment_identifier=shipment.tracking_number,
+        shipment_notes="Keep upright",
+    )
+
+    proposal = AgentActionProposal(
+        action_type="update_shipment_notes",
+        shipment_id=shipment.id,
+        shipment_identifier=shipment.tracking_number,
+        expected_status=ShipmentStatus(shipment.status),
+        expected_notes=shipment.notes,
+        new_notes="Keep upright",
+        summary="Update shipment notes after confirmation.",
+    )
+
+    prepare_service_mock = MagicMock(
+        spec=PrepareShipmentActionService,
+    )
+    prepare_service_mock.prepare_notes_update = AsyncMock(
+        return_value=proposal,
+    )
+    prepare_service = cast(
+        PrepareShipmentActionService,
+        prepare_service_mock,
+    )
+
+    summarize_service, _ = make_summarize_shipment_service()
+
+    runtime = make_runtime(
+        planner=planner,
+        uow=uow,
+        llm_provider=FakeLLMProvider(),
+        summarize_shipment_service=summarize_service,
+        prepare_shipment_action_service=prepare_service,
+    )
+
+    result = await runtime.execute_with_context(
+        tenant_id=tenant_id,
+        role_id=TEST_ROLE_ID,
+        question="Set the shipment notes to Keep upright.",
+    )
+
+    assert result.action_proposal == proposal
+    assert result.continuation is None
+    assert "requires explicit confirmation" in result.answer

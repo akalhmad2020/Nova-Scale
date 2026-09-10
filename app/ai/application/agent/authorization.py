@@ -30,9 +30,7 @@ class AgentAuthorizationService:
         context: AgentAuthorizationContext,
         route: AgentRoute,
     ) -> bool:
-        required_permissions = self._required_permissions(
-            route,
-        )
+        required_permissions = self._required_permissions(route)
 
         for permission_code in required_permissions:
             allowed = await self._permission_checker(
@@ -65,6 +63,14 @@ class AgentAuthorizationService:
                 Permissions.SHIPMENT_EVENT_READ,
             ),
             "retrieve_context": (Permissions.DOCUMENT_READ,),
+            "transition_shipment_status": (
+                Permissions.SHIPMENT_READ,
+                Permissions.SHIPMENT_TRANSITION,
+            ),
+            "update_shipment_notes": (
+                Permissions.SHIPMENT_READ,
+                Permissions.SHIPMENT_UPDATE,
+            ),
         }
 
         return permissions_by_route[route]
