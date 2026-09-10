@@ -1,7 +1,8 @@
+from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,19 +22,19 @@ from app.ai.application.agent.shipment_operational_models import (
 from app.ai.application.agent.shipment_resolution_exceptions import (
     ShipmentIdentifierAmbiguousError,
 )
-from app.ai.application.agent.shipment_resolution_models import (
-    ShipmentIdentifierKind,
-)
+from app.ai.application.agent.shipment_resolution_models import ShipmentIdentifierKind
+from app.ai.application.conversation_exceptions import ConversationNotFoundError
+from app.ai.application.conversation_models import ConversationDetail, ConversationSummary
 from app.ai.application.dependencies import (
     build_agent_runtime,
     build_analyze_shipment_service,
     build_answer_question_service,
+    build_conversation_service,
     build_resolve_shipment_service,
 )
-from app.ai.application.services.analyze_shipment import (
-    AnalyzeShipmentService,
-)
+from app.ai.application.services.analyze_shipment import AnalyzeShipmentService
 from app.ai.application.services.answer_question import AnswerQuestionService
+from app.ai.application.services.conversation_service import ConversationService
 from app.ai.application.services.resolve_shipment import ResolveShipmentService
 from app.ai.infrastructure.agent.langgraph_runtime import LangGraphAgentRuntime
 from app.core.config import Settings, get_settings
@@ -45,22 +46,12 @@ from app.modules.identity.domain.permissions import Permissions
 from app.modules.identity.infrastructure.models.membership import Membership
 from app.modules.shipments.application.exceptions import ShipmentNotFoundError
 
-router = APIRouter(
-    prefix="/ai",
-    tags=["ai"],
-)
+router = APIRouter(prefix="/ai", tags=["ai"])
 
 
 class AskQuestionRequest(BaseModel):
-    question: str = Field(
-        min_length=1,
-        max_length=4000,
-    )
-    limit: int = Field(
-        default=5,
-        ge=1,
-        le=20,
-    )
+    question: str = Field(min_length=1, max_length=4000)
+    limit: int = Field(default=5, ge=1, le=20)
 
 
 class RAGSourceResponse(BaseModel):
@@ -80,35 +71,21 @@ class AskQuestionResponse(BaseModel):
 class AgentContinuationRequest(BaseModel):
     kind: AgentContinuationKind
     route: ShipmentContinuationRoute
-    original_identifier: str = Field(
-        min_length=1,
-        max_length=500,
-    )
+    original_identifier: str = Field(min_length=1, max_length=500)
 
 
 class ConversationMessageRequest(BaseModel):
-    role: Literal[
-        "user",
-        "assistant",
-    ]
-    content: str = Field(
-        min_length=1,
-        max_length=4000,
-    )
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=4000)
 
 
 class ConversationContextRequest(BaseModel):
-    messages: list[ConversationMessageRequest] = Field(
-        default_factory=list,
-        max_length=20,
-    )
+    messages: list[ConversationMessageRequest] = Field(default_factory=list, max_length=20)
 
 
 class AgentRequest(BaseModel):
-    question: str = Field(
-        min_length=1,
-        max_length=4000,
-    )
+    question: str = Field(min_length=1, max_length=4000)
+    conversation_id: UUID | None = None
     continuation: AgentContinuationRequest | None = None
     conversation_context: ConversationContextRequest | None = None
 
@@ -121,6 +98,29 @@ class AgentContinuationResponse(BaseModel):
 
 class AgentResponse(BaseModel):
     answer: str
+    continuation: AgentContinuationResponse | None = None
+
+
+class ConversationSummaryResponse(BaseModel):
+    id: UUID
+    title: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ConversationMessageResponse(BaseModel):
+    id: UUID
+    role: Literal["user", "assistant"]
+    content: str
+    created_at: datetime
+
+
+class ConversationDetailResponse(BaseModel):
+    id: UUID
+    title: str
+    created_at: datetime
+    updated_at: datetime
+    messages: list[ConversationMessageResponse]
     continuation: AgentContinuationResponse | None = None
 
 
@@ -144,35 +144,23 @@ class ShipmentOperationalAnalysisResponse(BaseModel):
 
 
 def get_answer_question_service(
-    settings: Annotated[
-        Settings,
-        Depends(get_settings),
-    ],
-    session: Annotated[
-        AsyncSession,
-        Depends(get_db_session),
-    ],
+    settings: Annotated[Settings, Depends(get_settings)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> AnswerQuestionService:
-    return build_answer_question_service(
-        settings=settings,
-        session=session,
-    )
+    return build_answer_question_service(settings=settings, session=session)
 
 
 def get_agent_runtime(
-    settings: Annotated[
-        Settings,
-        Depends(get_settings),
-    ],
-    session: Annotated[
-        AsyncSession,
-        Depends(get_db_session),
-    ],
+    settings: Annotated[Settings, Depends(get_settings)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> LangGraphAgentRuntime:
-    return build_agent_runtime(
-        settings=settings,
-        session=session,
-    )
+    return build_agent_runtime(settings=settings, session=session)
+
+
+def get_conversation_service(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> ConversationService:
+    return build_conversation_service(session=session)
 
 
 def get_resolve_shipment_service() -> ResolveShipmentService:
@@ -183,24 +171,72 @@ def get_analyze_shipment_service() -> AnalyzeShipmentService:
     return build_analyze_shipment_service()
 
 
-@router.post(
-    "/tenants/{tenant_id}/ask",
-    response_model=AskQuestionResponse,
-)
+def _continuation_from_request(
+    continuation: AgentContinuationRequest | None,
+) -> AgentContinuation | None:
+    if continuation is None:
+        return None
+
+    return AgentContinuation(
+        kind=continuation.kind,
+        route=continuation.route,
+        original_identifier=continuation.original_identifier,
+    )
+
+
+def _continuation_response(
+    continuation: AgentContinuation | None,
+) -> AgentContinuationResponse | None:
+    if continuation is None:
+        return None
+
+    return AgentContinuationResponse(
+        kind=continuation.kind,
+        route=continuation.route,
+        original_identifier=continuation.original_identifier,
+    )
+
+
+def _conversation_summary_response(
+    conversation: ConversationSummary,
+) -> ConversationSummaryResponse:
+    return ConversationSummaryResponse(
+        id=conversation.id,
+        title=conversation.title,
+        created_at=conversation.created_at,
+        updated_at=conversation.updated_at,
+    )
+
+
+def _conversation_detail_response(
+    conversation: ConversationDetail,
+) -> ConversationDetailResponse:
+    return ConversationDetailResponse(
+        id=conversation.id,
+        title=conversation.title,
+        created_at=conversation.created_at,
+        updated_at=conversation.updated_at,
+        messages=[
+            ConversationMessageResponse(
+                id=message.id,
+                role=message.role,
+                content=message.content,
+                created_at=message.created_at,
+            )
+            for message in conversation.messages
+        ],
+        continuation=_continuation_response(conversation.continuation),
+    )
+
+
+@router.post("/tenants/{tenant_id}/ask", response_model=AskQuestionResponse)
 async def ask_question(
     tenant_id: UUID,
     payload: AskQuestionRequest,
-    service: Annotated[
-        AnswerQuestionService,
-        Depends(get_answer_question_service),
-    ],
+    service: Annotated[AnswerQuestionService, Depends(get_answer_question_service)],
     _membership: Annotated[
         Membership,
-        Depends(
-            require_entitlement(
-                Entitlements.AI_ASSISTANT,
-            )
-        ),
+        Depends(require_entitlement(Entitlements.AI_ASSISTANT)),
     ],
 ) -> AskQuestionResponse:
     answer = await service.execute(
@@ -226,67 +262,186 @@ async def ask_question(
 
 
 @router.post(
+    "/tenants/{tenant_id}/conversations",
+    response_model=ConversationDetailResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_conversation(
+    tenant_id: UUID,
+    service: Annotated[ConversationService, Depends(get_conversation_service)],
+    membership: Annotated[
+        Membership,
+        Depends(require_entitlement(Entitlements.AI_ASSISTANT)),
+    ],
+) -> ConversationDetailResponse:
+    conversation = await service.create(
+        tenant_id=tenant_id,
+        user_id=membership.user_id,
+    )
+
+    return _conversation_detail_response(conversation)
+
+
+@router.get(
+    "/tenants/{tenant_id}/conversations",
+    response_model=list[ConversationSummaryResponse],
+)
+async def list_conversations(
+    tenant_id: UUID,
+    service: Annotated[ConversationService, Depends(get_conversation_service)],
+    membership: Annotated[
+        Membership,
+        Depends(require_entitlement(Entitlements.AI_ASSISTANT)),
+    ],
+) -> list[ConversationSummaryResponse]:
+    conversations = await service.list(
+        tenant_id=tenant_id,
+        user_id=membership.user_id,
+    )
+
+    return [_conversation_summary_response(item) for item in conversations]
+
+
+@router.get(
+    "/tenants/{tenant_id}/conversations/{conversation_id}",
+    response_model=ConversationDetailResponse,
+)
+async def get_conversation(
+    tenant_id: UUID,
+    conversation_id: UUID,
+    service: Annotated[ConversationService, Depends(get_conversation_service)],
+    membership: Annotated[
+        Membership,
+        Depends(require_entitlement(Entitlements.AI_ASSISTANT)),
+    ],
+) -> ConversationDetailResponse:
+    try:
+        conversation = await service.get(
+            tenant_id=tenant_id,
+            user_id=membership.user_id,
+            conversation_id=conversation_id,
+        )
+    except ConversationNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found",
+        ) from exc
+
+    return _conversation_detail_response(conversation)
+
+
+@router.delete(
+    "/tenants/{tenant_id}/conversations/{conversation_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_conversation(
+    tenant_id: UUID,
+    conversation_id: UUID,
+    service: Annotated[ConversationService, Depends(get_conversation_service)],
+    membership: Annotated[
+        Membership,
+        Depends(require_entitlement(Entitlements.AI_ASSISTANT)),
+    ],
+) -> Response:
+    try:
+        await service.delete(
+            tenant_id=tenant_id,
+            user_id=membership.user_id,
+            conversation_id=conversation_id,
+        )
+    except ConversationNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found",
+        ) from exc
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
     "/tenants/{tenant_id}/agent",
     response_model=AgentResponse,
 )
 async def run_agent(
     tenant_id: UUID,
     payload: AgentRequest,
-    runtime: Annotated[
-        LangGraphAgentRuntime,
-        Depends(get_agent_runtime),
+    runtime: Annotated[LangGraphAgentRuntime, Depends(get_agent_runtime)],
+    conversation_service: Annotated[
+        ConversationService,
+        Depends(get_conversation_service),
     ],
     membership: Annotated[
         Membership,
-        Depends(
-            require_entitlement(
-                Entitlements.AI_ASSISTANT,
-            )
-        ),
+        Depends(require_entitlement(Entitlements.AI_ASSISTANT)),
     ],
 ) -> AgentResponse:
-    continuation: AgentContinuation | None = None
-
-    if payload.continuation is not None:
-        continuation = AgentContinuation(
-            kind=payload.continuation.kind,
-            route=payload.continuation.route,
-            original_identifier=(payload.continuation.original_identifier),
-        )
-
+    requested_continuation = _continuation_from_request(payload.continuation)
+    continuation = requested_continuation
     conversation_context: ConversationContext | None = None
+    persistent_conversation_id = payload.conversation_id
 
-    if payload.conversation_context is not None:
-        conversation_context = ConversationContext(
-            messages=tuple(
-                ConversationMessage(
-                    role=message.role,
-                    content=message.content,
-                )
-                for message in payload.conversation_context.messages
+    try:
+        if persistent_conversation_id is not None:
+            prepared_turn = await conversation_service.prepare_turn(
+                tenant_id=tenant_id,
+                user_id=membership.user_id,
+                conversation_id=persistent_conversation_id,
+                question=payload.question,
             )
+            conversation_context = prepared_turn.conversation_context
+
+            if "continuation" in payload.model_fields_set:
+                if (
+                    requested_continuation is not None
+                    and requested_continuation != prepared_turn.continuation
+                ):
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="Continuation does not match conversation state",
+                    )
+            else:
+                continuation = prepared_turn.continuation
+        elif payload.conversation_context is not None:
+            conversation_context = ConversationContext(
+                messages=tuple(
+                    ConversationMessage(
+                        role=message.role,
+                        content=message.content,
+                    )
+                    for message in payload.conversation_context.messages
+                )
+            )
+
+        result = await runtime.execute_with_context(
+            tenant_id=tenant_id,
+            role_id=membership.role_id,
+            question=payload.question,
+            continuation=continuation,
+            conversation_context=conversation_context,
         )
 
-    result = await runtime.execute_with_context(
-        tenant_id=tenant_id,
-        role_id=membership.role_id,
-        question=payload.question,
-        continuation=continuation,
-        conversation_context=conversation_context,
-    )
-
-    response_continuation: AgentContinuationResponse | None = None
-
-    if result.continuation is not None:
-        response_continuation = AgentContinuationResponse(
-            kind=result.continuation.kind,
-            route=result.continuation.route,
-            original_identifier=(result.continuation.original_identifier),
-        )
+        if persistent_conversation_id is not None:
+            await conversation_service.complete_turn(
+                tenant_id=tenant_id,
+                user_id=membership.user_id,
+                conversation_id=persistent_conversation_id,
+                answer=result.answer,
+                continuation=result.continuation,
+            )
+    except ConversationNotFoundError as exc:
+        await conversation_service.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found",
+        ) from exc
+    except Exception:
+        if persistent_conversation_id is not None:
+            await conversation_service.rollback()
+        raise
 
     return AgentResponse(
         answer=result.answer,
-        continuation=response_continuation,
+        continuation=_continuation_response(result.continuation),
     )
 
 
@@ -307,19 +462,11 @@ async def analyze_shipment_operations(
     ],
     _membership: Annotated[
         Membership,
-        Depends(
-            require_entitlement(
-                Entitlements.AI_ASSISTANT,
-            )
-        ),
+        Depends(require_entitlement(Entitlements.AI_ASSISTANT)),
     ],
     _shipment_event_access: Annotated[
         Membership,
-        Depends(
-            require_permission(
-                Permissions.SHIPMENT_EVENT_READ,
-            )
-        ),
+        Depends(require_permission(Permissions.SHIPMENT_EVENT_READ)),
     ],
 ) -> ShipmentOperationalAnalysisResponse:
     try:
@@ -358,12 +505,7 @@ async def analyze_shipment_operations(
                 message=issue.message,
                 recommended_action=issue.recommended_action,
                 age_seconds=(
-                    max(
-                        0,
-                        int(issue.age.total_seconds()),
-                    )
-                    if issue.age is not None
-                    else None
+                    max(0, int(issue.age.total_seconds())) if issue.age is not None else None
                 ),
             )
             for issue in analysis.issues
