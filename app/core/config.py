@@ -191,6 +191,13 @@ class Settings(BaseSettings):
         ge=1.0,
         le=600.0,
     )
+    ai_ollama_max_attempts: int = Field(default=2, ge=1, le=4)
+    ai_ollama_retry_backoff_seconds: float = Field(default=0.25, ge=0.0, le=5.0)
+    ai_max_prompt_characters: int = Field(default=32_000, ge=1_000, le=200_000)
+    ai_max_system_prompt_characters: int = Field(default=16_000, ge=1_000, le=100_000)
+    ai_max_response_characters: int = Field(default=32_000, ge=1_000, le=200_000)
+    ai_max_output_tokens: int = Field(default=2_048, ge=64, le=16_384)
+    ai_max_context_window: int = Field(default=8_192, ge=512, le=131_072)
 
     ai_embedding_provider: Literal["ollama"] = "ollama"
     ai_ollama_embedding_model: str = "nomic-embed-text"

@@ -2,6 +2,7 @@ import logging
 from time import perf_counter
 
 from app.ai.application.ports.llm_provider import LLMProvider
+from app.ai.application.runtime_exceptions import AIRequestLimitError, AIResponseLimitError
 from app.ai.domain.models import LLMMessage, LLMRequest, LLMResponse
 
 logger = logging.getLogger("novascale.ai")
@@ -11,8 +12,19 @@ class GenerateTextService:
     def __init__(
         self,
         provider: LLMProvider,
+        *,
+        max_prompt_characters: int = 32_000,
+        max_system_prompt_characters: int = 16_000,
+        max_response_characters: int = 32_000,
+        max_output_tokens: int = 2_048,
+        max_context_window: int = 8_192,
     ) -> None:
         self._provider = provider
+        self._max_prompt_characters = max_prompt_characters
+        self._max_system_prompt_characters = max_system_prompt_characters
+        self._max_response_characters = max_response_characters
+        self._max_output_tokens = max_output_tokens
+        self._max_context_window = max_context_window
 
     async def execute(
         self,
@@ -23,6 +35,13 @@ class GenerateTextService:
         max_tokens: int = 512,
         context_window: int = 2048,
     ) -> LLMResponse:
+        self._validate_request_budget(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            max_tokens=max_tokens,
+            context_window=context_window,
+        )
+
         messages: list[LLMMessage] = []
 
         if system_prompt is not None:
@@ -73,6 +92,21 @@ class GenerateTextService:
             )
             raise
 
+        if len(response.content) > self._max_response_characters:
+            logger.warning(
+                "AI text generation response rejected",
+                extra={
+                    "ai_operation": "generate_text",
+                    "ai_provider": provider_name,
+                    "ai_model": response.model,
+                    "ai_outcome": "response_limit_exceeded",
+                    "response_character_count": len(response.content),
+                },
+            )
+            raise AIResponseLimitError(
+                "AI provider response exceeds the configured character limit"
+            )
+
         logger.info(
             "AI text generation completed",
             extra={
@@ -96,3 +130,23 @@ class GenerateTextService:
         )
 
         return response
+
+    def _validate_request_budget(
+        self,
+        *,
+        prompt: str,
+        system_prompt: str | None,
+        max_tokens: int,
+        context_window: int,
+    ) -> None:
+        if len(prompt) > self._max_prompt_characters:
+            raise AIRequestLimitError("AI prompt exceeds the configured character limit")
+
+        if system_prompt is not None and len(system_prompt) > self._max_system_prompt_characters:
+            raise AIRequestLimitError("AI system prompt exceeds the configured character limit")
+
+        if max_tokens < 1 or max_tokens > self._max_output_tokens:
+            raise AIRequestLimitError("AI max_tokens exceeds the configured output-token budget")
+
+        if context_window < 1 or context_window > self._max_context_window:
+            raise AIRequestLimitError("AI context_window exceeds the configured context budget")

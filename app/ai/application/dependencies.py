@@ -86,6 +86,11 @@ def build_generate_text_service(
 
     return GenerateTextService(
         provider=provider,
+        max_prompt_characters=settings.ai_max_prompt_characters,
+        max_system_prompt_characters=settings.ai_max_system_prompt_characters,
+        max_response_characters=settings.ai_max_response_characters,
+        max_output_tokens=settings.ai_max_output_tokens,
+        max_context_window=settings.ai_max_context_window,
     )
 
 
