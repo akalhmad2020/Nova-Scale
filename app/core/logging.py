@@ -44,6 +44,17 @@ class JsonFormatter(logging.Formatter):
             "retryable_failures",
             "skipped",
             "unexpected_failures",
+            "ai_operation",
+            "ai_provider",
+            "ai_model",
+            "ai_outcome",
+            "provider_duration_ms",
+            "max_tokens",
+            "context_window",
+            "prompt_character_count",
+            "response_character_count",
+            "prompt_tokens",
+            "completion_tokens",
         ):
             if hasattr(record, field):
                 payload[field] = getattr(record, field)

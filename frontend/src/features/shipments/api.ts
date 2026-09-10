@@ -1,4 +1,5 @@
-import type { ShipmentEvent , RecordShipmentEventInput, } from "@/features/shipments/events-types";
+import type { RecordShipmentEventInput, ShipmentEvent } from "@/features/shipments/events-types";
+import type { ShipmentOperationalAnalysis } from "@/features/shipments/intelligence-types";
 import type {
   CreateShipmentInput,
   Shipment,
@@ -76,6 +77,29 @@ export async function getShipment(
   }
 
   return data as Shipment;
+}
+
+export async function getShipmentOperationalAnalysis(
+  shipmentId: string,
+): Promise<ShipmentOperationalAnalysis> {
+  const response = await fetch(
+    `/api/shipments/${shipmentId}/operations`,
+    {
+      method: "GET",
+      cache: "no-store",
+    },
+  );
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data?.detail ??
+        "Unable to load shipment intelligence",
+    );
+  }
+
+  return data as ShipmentOperationalAnalysis;
 }
 
 export async function getShipmentEvents(

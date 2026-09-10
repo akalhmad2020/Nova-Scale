@@ -46,8 +46,9 @@ class AnswerQuestionService:
                 "You are the NovaScale AI assistant. "
                 "Answer the user's question using only the provided context. "
                 "Do not invent information that is not supported by the context. "
-                "If the context is insufficient, say that you do not have enough "
-                "information to answer."
+                "Cite factual claims with the matching source marker such as "
+                "[Source 1]. If the context is insufficient, say that you do not "
+                "have enough information to answer."
             ),
             temperature=0.0,
         )
@@ -66,15 +67,25 @@ class AnswerQuestionService:
             (
                 f"[Source {index}]\n"
                 f"Document: {retrieved_chunk.chunk.document_id}\n"
+                f"Chunk: {retrieved_chunk.chunk.chunk_index}\n"
+                f"Relevance score: {retrieved_chunk.score:.4f}\n"
                 f"Content: {retrieved_chunk.chunk.content}"
             )
-            for index, retrieved_chunk in enumerate(retrieved_chunks, start=1)
+            for index, retrieved_chunk in enumerate(
+                retrieved_chunks,
+                start=1,
+            )
         )
 
     @staticmethod
-    def _build_prompt(*, question: str, context: str) -> str:
+    def _build_prompt(
+        *,
+        question: str,
+        context: str,
+    ) -> str:
         return (
-            "Use the following context to answer the question.\n\n"
+            "Use the following context to answer the question. "
+            "Preserve the source markers when citing evidence.\n\n"
             f"Context:\n{context}\n\n"
             f"Question:\n{question}"
         )

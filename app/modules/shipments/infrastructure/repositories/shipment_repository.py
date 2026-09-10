@@ -43,6 +43,25 @@ class ShipmentRepository:
 
         return shipment
 
+    async def list_by_reference_and_tenant(
+        self,
+        reference: str,
+        tenant_id: UUID,
+    ) -> list[Shipment]:
+        statement = (
+            select(Shipment)
+            .where(
+                Shipment.reference == reference,
+                Shipment.tenant_id == tenant_id,
+                Shipment.deleted_at.is_(None),
+            )
+            .order_by(Shipment.created_at)
+        )
+
+        result = await self._session.execute(statement)
+
+        return list(result.scalars().all())
+
     async def list_by_tenant(
         self,
         tenant_id: UUID,

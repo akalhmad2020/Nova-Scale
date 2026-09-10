@@ -182,10 +182,17 @@ class FakeShipmentRepository:
         *,
         shipment_id: UUID,
         tenant_id: UUID,
+        tracking_number: str | None = None,
+        reference: str | None = None,
     ) -> Shipment:
         shipment = Shipment()
         shipment.id = shipment_id
         shipment.tenant_id = tenant_id
+
+        if tracking_number is not None:
+            shipment.tracking_number = tracking_number
+
+        shipment.reference = reference
 
         self.items.append(shipment)
 
@@ -196,11 +203,92 @@ class FakeShipmentRepository:
         shipment_id: UUID,
         tenant_id: UUID,
     ) -> Shipment | None:
-        for shipment in self.items:
-            if shipment.id == shipment_id and shipment.tenant_id == tenant_id:
-                return shipment
+        return next(
+            (
+                shipment
+                for shipment in self.items
+                if shipment.id == shipment_id
+                and shipment.tenant_id == tenant_id
+                and getattr(
+                    shipment,
+                    "deleted_at",
+                    None,
+                )
+                is None
+            ),
+            None,
+        )
 
-        return None
+    async def get_by_tracking_number_and_tenant(
+        self,
+        tracking_number: str,
+        tenant_id: UUID,
+    ) -> Shipment | None:
+        return next(
+            (
+                shipment
+                for shipment in self.items
+                if getattr(
+                    shipment,
+                    "tracking_number",
+                    None,
+                )
+                == tracking_number
+                and shipment.tenant_id == tenant_id
+                and getattr(
+                    shipment,
+                    "deleted_at",
+                    None,
+                )
+                is None
+            ),
+            None,
+        )
+
+    async def list_by_reference_and_tenant(
+        self,
+        reference: str,
+        tenant_id: UUID,
+    ) -> list[Shipment]:
+        return [
+            shipment
+            for shipment in self.items
+            if getattr(
+                shipment,
+                "reference",
+                None,
+            )
+            == reference
+            and shipment.tenant_id == tenant_id
+            and getattr(
+                shipment,
+                "deleted_at",
+                None,
+            )
+            is None
+        ]
+
+    async def list_by_tenant(
+        self,
+        tenant_id: UUID,
+    ) -> list[Shipment]:
+        return [
+            shipment
+            for shipment in self.items
+            if shipment.tenant_id == tenant_id
+            and getattr(
+                shipment,
+                "deleted_at",
+                None,
+            )
+            is None
+        ]
+
+    def add(
+        self,
+        shipment: Shipment,
+    ) -> None:
+        self.items.append(shipment)
 
 
 class FakeOutboxMessageRepository:

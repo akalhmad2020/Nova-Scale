@@ -67,6 +67,10 @@ async def test_answer_question_uses_retrieved_context() -> None:
     assert "Shipment NOVA-100 is currently in transit." in prompt
     assert "What is the status of shipment NOVA-100?" in prompt
     assert "document-1" in prompt
+    assert "[Source 1]" in prompt
+    assert "Chunk: 0" in prompt
+    assert "Relevance score: 0.9500" in prompt
+    assert "Preserve the source markers" in prompt
 
 
 @pytest.mark.asyncio

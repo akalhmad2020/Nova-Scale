@@ -3,8 +3,13 @@ from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.application.agent.get_shipment_tool import GetShipmentTool
-from app.ai.application.agent.retrieve_context_tool import (
-    RetrieveContextTool,
+from app.ai.application.agent.retrieve_context_tool import RetrieveContextTool
+from app.ai.application.agent.shipment_summary_tool import ShipmentSummaryTool
+from app.ai.application.services.analyze_shipment import (
+    AnalyzeShipmentService,
+)
+from app.ai.application.services.analyze_shipment_operations import (
+    AnalyzeShipmentOperationsService,
 )
 from app.ai.application.services.answer_question import AnswerQuestionService
 from app.ai.application.services.chunk_text import ChunkTextService
@@ -14,7 +19,11 @@ from app.ai.application.services.index_stored_document import (
     IndexStoredDocumentService,
 )
 from app.ai.application.services.ingest_document import IngestDocumentService
+from app.ai.application.services.resolve_shipment import ResolveShipmentService
 from app.ai.application.services.retrieve_context import RetrieveContextService
+from app.ai.application.services.summarize_shipment import (
+    SummarizeShipmentService,
+)
 from app.ai.infrastructure.agent.langgraph_runtime import (
     LangGraphAgentRuntime,
 )
@@ -30,8 +39,15 @@ from app.ai.infrastructure.vector_store.postgres_vector_store import (
     PostgresVectorStore,
 )
 from app.core.config import Settings
+from app.core.database import SessionFactory
+from app.modules.shipment_events.api.dependencies import (
+    get_list_shipment_events_use_case,
+)
 from app.modules.shipments.api.dependencies import (
     get_get_shipment_use_case,
+)
+from app.modules.shipments.infrastructure.unit_of_work import (
+    SQLAlchemyUnitOfWork as ShipmentUnitOfWork,
 )
 
 
@@ -45,13 +61,50 @@ def build_generate_text_service(
     )
 
 
+def build_analyze_shipment_service() -> AnalyzeShipmentService:
+    shipment_summary_tool = ShipmentSummaryTool(
+        get_shipment=get_get_shipment_use_case(),
+        list_shipment_events=get_list_shipment_events_use_case(),
+    )
+
+    return AnalyzeShipmentService(
+        shipment_summary_tool=shipment_summary_tool,
+        analyze_operations_service=AnalyzeShipmentOperationsService(),
+    )
+
+
+def build_resolve_shipment_service() -> ResolveShipmentService:
+    return ResolveShipmentService(
+        unit_of_work=ShipmentUnitOfWork(
+            SessionFactory,
+        ),
+    )
+
+
+def build_summarize_shipment_service(
+    settings: Settings,
+) -> SummarizeShipmentService:
+    shipment_summary_tool = ShipmentSummaryTool(
+        get_shipment=get_get_shipment_use_case(),
+        list_shipment_events=get_list_shipment_events_use_case(),
+    )
+
+    return SummarizeShipmentService(
+        shipment_summary_tool=shipment_summary_tool,
+        generate_text_service=build_generate_text_service(settings),
+    )
+
+
 def build_retrieve_context_service(
     *,
     settings: Settings,
     session: AsyncSession,
 ) -> RetrieveContextService:
     embedding_provider = build_embedding_provider(settings)
-    vector_store = PostgresVectorStore(session=session)
+
+    vector_store = PostgresVectorStore(
+        session=session,
+    )
 
     return RetrieveContextService(
         embedding_provider=embedding_provider,
@@ -83,10 +136,14 @@ def build_agent_runtime(
     session: AsyncSession,
 ) -> LangGraphAgentRuntime:
     generate_text_service = build_generate_text_service(settings)
-
+    analyze_shipment_service = build_analyze_shipment_service()
     agent_planner = LLMAgentPlanner(
         generate_text_service=generate_text_service,
     )
+
+    resolve_shipment_service = build_resolve_shipment_service()
+
+    summarize_shipment_service = build_summarize_shipment_service(settings)
 
     get_shipment_tool = GetShipmentTool(
         get_shipment=get_get_shipment_use_case(),
@@ -103,7 +160,10 @@ def build_agent_runtime(
 
     return LangGraphAgentRuntime(
         agent_planner=agent_planner,
+        resolve_shipment_service=resolve_shipment_service,
         get_shipment_tool=get_shipment_tool,
+        summarize_shipment_service=summarize_shipment_service,
+        analyze_shipment_service=analyze_shipment_service,
         retrieve_context_tool=retrieve_context_tool,
         generate_text_service=generate_text_service,
     )

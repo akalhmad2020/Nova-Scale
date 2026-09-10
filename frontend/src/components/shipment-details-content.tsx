@@ -1,10 +1,12 @@
 "use client";
 
+import { ShipmentIntelligencePanel } from "@/components/shipment-intelligence-panel";
 import { ShipmentTimeline } from "@/components/shipment-timeline";
 import { RecordShipmentEventForm } from "@/components/record-shipment-event-form";
 import {
   useShipment,
   useShipmentEvents,
+  useShipmentOperationalAnalysis,
   useTransitionShipmentStatus,
 } from "@/features/shipments/hooks";
 import type {
@@ -23,6 +25,11 @@ export function ShipmentDetailsContent({
 
   const shipmentEventsQuery =
     useShipmentEvents(shipmentId);
+
+  const shipmentIntelligenceQuery =
+    useShipmentOperationalAnalysis(
+      shipmentId,
+    );
 
   const transitionMutation =
     useTransitionShipmentStatus(
@@ -135,6 +142,30 @@ export function ShipmentDetailsContent({
               cancelled.
             </p>
           )}
+      </div>
+
+      <div>
+        {shipmentIntelligenceQuery.isPending && (
+          <div className="rounded-xl border border-zinc-200 bg-white p-5">
+            <p className="text-sm text-zinc-500">
+              Loading shipment intelligence...
+            </p>
+          </div>
+        )}
+
+        {shipmentIntelligenceQuery.isError && (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {shipmentIntelligenceQuery.error.message}
+          </div>
+        )}
+
+        {shipmentIntelligenceQuery.isSuccess && (
+          <ShipmentIntelligencePanel
+            analysis={
+              shipmentIntelligenceQuery.data
+            }
+          />
+        )}
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">

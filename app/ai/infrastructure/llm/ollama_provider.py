@@ -34,6 +34,8 @@ class OllamaLLMProvider(LLMProvider):
             "stream": False,
             "options": {
                 "temperature": request.temperature,
+                "num_predict": request.max_tokens,
+                "num_ctx": request.context_window,
             },
         }
 
@@ -64,7 +66,16 @@ class OllamaLLMProvider(LLMProvider):
         if not isinstance(model, str):
             model = self._model
 
+        prompt_tokens = data.get("prompt_eval_count")
+        completion_tokens = data.get("eval_count")
+        total_duration = data.get("total_duration")
+
         return LLMResponse(
             content=content,
             model=model,
+            prompt_tokens=(prompt_tokens if isinstance(prompt_tokens, int) else None),
+            completion_tokens=(completion_tokens if isinstance(completion_tokens, int) else None),
+            provider_duration_ms=(
+                total_duration / 1_000_000 if isinstance(total_duration, int | float) else None
+            ),
         )

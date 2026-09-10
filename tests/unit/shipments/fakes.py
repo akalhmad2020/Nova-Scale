@@ -48,6 +48,19 @@ class FakeShipmentRepository:
             None,
         )
 
+    async def list_by_reference_and_tenant(
+        self,
+        reference: str,
+        tenant_id: UUID,
+    ) -> list[Shipment]:
+        return [
+            shipment
+            for shipment in self.items
+            if shipment.reference == reference
+            and shipment.tenant_id == tenant_id
+            and shipment.deleted_at is None
+        ]
+
     async def list_by_tenant(
         self,
         tenant_id: UUID,

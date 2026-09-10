@@ -10,6 +10,7 @@ import {
   createShipment,
   getShipment,
   getShipmentEvents,
+  getShipmentOperationalAnalysis,
   getShipments,
   recordShipmentEvent,
   transitionShipmentStatus,
@@ -72,6 +73,30 @@ export function useShipment(
     ],
     queryFn: () =>
       getShipment(shipmentId),
+    enabled: Boolean(
+      activeTenantIdQuery.data &&
+        shipmentId,
+    ),
+    retry: false,
+  });
+}
+
+export function useShipmentOperationalAnalysis(
+  shipmentId: string,
+) {
+  const activeTenantIdQuery =
+    useActiveTenantId();
+
+  return useQuery({
+    queryKey: [
+      "shipment-intelligence",
+      activeTenantIdQuery.data,
+      shipmentId,
+    ],
+    queryFn: () =>
+      getShipmentOperationalAnalysis(
+        shipmentId,
+      ),
     enabled: Boolean(
       activeTenantIdQuery.data &&
         shipmentId,
@@ -143,6 +168,14 @@ export function useTransitionShipmentStatus(
             shipmentId,
           ],
         }),
+
+        queryClient.invalidateQueries({
+          queryKey: [
+            "shipment-intelligence",
+            activeTenantIdQuery.data,
+            shipmentId,
+          ],
+        }),
       ]);
     },
   });
@@ -166,13 +199,23 @@ export function useRecordShipmentEvent(
       ),
 
     onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: [
-          "shipment-events",
-          activeTenantIdQuery.data,
-          shipmentId,
-        ],
-      });
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: [
+            "shipment-events",
+            activeTenantIdQuery.data,
+            shipmentId,
+          ],
+        }),
+
+        queryClient.invalidateQueries({
+          queryKey: [
+            "shipment-intelligence",
+            activeTenantIdQuery.data,
+            shipmentId,
+          ],
+        }),
+      ]);
     },
   });
 }

@@ -155,3 +155,50 @@ async def test_retrieve_context_returns_empty_for_blank_query() -> None:
 
     assert results == ()
     assert vector_store.searches == []
+
+
+@pytest.mark.asyncio
+async def test_retrieve_context_deduplicates_repeated_content() -> None:
+    tenant_id = uuid4()
+
+    embedding_provider = FakeEmbeddingProvider()
+    vector_store = FakeVectorStore()
+
+    first_chunk = RetrievedChunk(
+        chunk=DocumentChunk(
+            id="document-1:0",
+            document_id="document-1",
+            content="Shipment NOVA-100 is in transit.",
+            chunk_index=0,
+        ),
+        score=0.91,
+    )
+
+    duplicate_content = RetrievedChunk(
+        chunk=DocumentChunk(
+            id="document-2:0",
+            document_id="document-2",
+            content="  shipment   NOVA-100 is IN transit.  ",
+            chunk_index=0,
+        ),
+        score=0.89,
+    )
+
+    vector_store.search_results = (
+        first_chunk,
+        duplicate_content,
+    )
+
+    service = RetrieveContextService(
+        embedding_provider=embedding_provider,
+        vector_store=vector_store,
+        minimum_score=0.5,
+    )
+
+    results = await service.execute(
+        tenant_id=tenant_id,
+        query="Where is NOVA-100?",
+        limit=5,
+    )
+
+    assert results == (first_chunk,)
