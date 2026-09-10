@@ -1603,9 +1603,11 @@ async def test_runtime_logs_planner_retry_without_prompt_content(
         )
     )
 
-    assert record.ai_operation == "agent_planning"
-    assert record.ai_outcome == "retry"
-    assert record.attempt == 1
+    record_fields = vars(record)
+
+    assert record_fields["ai_operation"] == "agent_planning"
+    assert record_fields["ai_outcome"] == "retry"
+    assert record_fields["attempt"] == 1
 
     assert sensitive_question not in record.getMessage()
 
@@ -1651,8 +1653,10 @@ async def test_runtime_logs_planner_fallback_without_prompt_content(
         )
     )
 
-    assert record.ai_operation == "agent_planning"
-    assert record.ai_outcome == "fallback"
-    assert record.attempts == 2
+    record_fields = vars(record)
+
+    assert record_fields["ai_operation"] == "agent_planning"
+    assert record_fields["ai_outcome"] == "fallback"
+    assert record_fields["attempts"] == 2
 
     assert sensitive_question not in record.getMessage()
