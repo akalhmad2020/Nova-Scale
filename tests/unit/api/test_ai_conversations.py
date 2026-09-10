@@ -11,7 +11,11 @@ from app.ai.application.conversation_models import (
     PreparedConversationTurn,
     StoredConversationMessage,
 )
-from app.api.routes.ai import get_agent_runtime, get_conversation_service
+from app.api.routes.ai import (
+    get_agent_action_service,
+    get_agent_runtime,
+    get_conversation_service,
+)
 from app.main import app
 from app.modules.entitlements.api.dependencies import get_entitlements_use_case
 from app.modules.identity.api.auth_dependencies import get_current_membership
@@ -154,6 +158,20 @@ class FakeConversationService:
         self.rolled_back = True
 
 
+class FakeAgentActionService:
+    async def get_active_for_conversation(
+        self,
+        *,
+        tenant_id: UUID,
+        user_id: UUID,
+        conversation_id: UUID,
+    ) -> None:
+        assert tenant_id == TENANT_ID
+        assert user_id == USER_ID
+        assert conversation_id == CONVERSATION_ID
+        return None
+
+
 class FakeAgentRuntime:
     async def execute_with_context(
         self,
@@ -173,6 +191,7 @@ class FakeAgentRuntime:
 
 
 FAKE_CONVERSATION_SERVICE = FakeConversationService()
+FAKE_ACTION_SERVICE = FakeAgentActionService()
 
 
 def configure_overrides() -> None:
@@ -180,6 +199,7 @@ def configure_overrides() -> None:
     app.dependency_overrides[get_entitlements_use_case] = lambda: FakeEntitlementsUseCase()
     app.dependency_overrides[get_conversation_service] = lambda: FAKE_CONVERSATION_SERVICE
     app.dependency_overrides[get_agent_runtime] = lambda: FakeAgentRuntime()
+    app.dependency_overrides[get_agent_action_service] = lambda: FAKE_ACTION_SERVICE
 
 
 def test_create_and_list_conversations() -> None:

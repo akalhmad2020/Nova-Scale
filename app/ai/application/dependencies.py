@@ -8,6 +8,7 @@ from app.ai.application.agent.authorization import (
 from app.ai.application.agent.get_shipment_tool import GetShipmentTool
 from app.ai.application.agent.retrieve_context_tool import RetrieveContextTool
 from app.ai.application.agent.shipment_summary_tool import ShipmentSummaryTool
+from app.ai.application.services.agent_action_service import AgentActionService
 from app.ai.application.services.analyze_shipment import (
     AnalyzeShipmentService,
 )
@@ -23,10 +24,16 @@ from app.ai.application.services.index_stored_document import (
     IndexStoredDocumentService,
 )
 from app.ai.application.services.ingest_document import IngestDocumentService
+from app.ai.application.services.prepare_shipment_action import (
+    PrepareShipmentActionService,
+)
 from app.ai.application.services.resolve_shipment import ResolveShipmentService
 from app.ai.application.services.retrieve_context import RetrieveContextService
 from app.ai.application.services.summarize_shipment import (
     SummarizeShipmentService,
+)
+from app.ai.infrastructure.actions.repository import (
+    SQLAlchemyAgentActionRepository,
 )
 from app.ai.infrastructure.agent.identity_permission_checker import (
     IdentityPermissionChecker,
@@ -50,6 +57,12 @@ from app.ai.infrastructure.vector_store.postgres_vector_store import (
 )
 from app.core.config import Settings
 from app.core.database import SessionFactory
+from app.modules.audit.application.use_cases.record_audit_log import (
+    RecordAuditLogUseCase,
+)
+from app.modules.audit.infrastructure.repositories.sqlalchemy import (
+    SQLAlchemyAuditLogRepository,
+)
 from app.modules.identity.api.dependencies import (
     get_check_permission_use_case,
 )
@@ -58,6 +71,8 @@ from app.modules.shipment_events.api.dependencies import (
 )
 from app.modules.shipments.api.dependencies import (
     get_get_shipment_use_case,
+    get_transition_shipment_status_use_case,
+    get_update_shipment_use_case,
 )
 from app.modules.shipments.infrastructure.unit_of_work import (
     SQLAlchemyUnitOfWork as ShipmentUnitOfWork,
@@ -152,6 +167,32 @@ def build_conversation_service(
     )
 
 
+def build_prepare_shipment_action_service() -> PrepareShipmentActionService:
+    return PrepareShipmentActionService(
+        get_shipment=get_get_shipment_use_case(),
+    )
+
+
+def build_agent_action_service(
+    *,
+    session: AsyncSession,
+) -> AgentActionService:
+    permission_checker = IdentityPermissionChecker(
+        check_permission=get_check_permission_use_case(),
+    )
+
+    return AgentActionService(
+        repository=SQLAlchemyAgentActionRepository(session),
+        get_shipment=get_get_shipment_use_case(),
+        transition_shipment_status=get_transition_shipment_status_use_case(),
+        update_shipment=get_update_shipment_use_case(),
+        record_audit_log=RecordAuditLogUseCase(
+            audit_logs=SQLAlchemyAuditLogRepository(session),
+        ),
+        permission_checker=permission_checker,
+    )
+
+
 def build_agent_runtime(
     *,
     settings: Settings,
@@ -159,6 +200,7 @@ def build_agent_runtime(
 ) -> LangGraphAgentRuntime:
     generate_text_service = build_generate_text_service(settings)
     analyze_shipment_service = build_analyze_shipment_service()
+    prepare_shipment_action_service = build_prepare_shipment_action_service()
     agent_planner = LLMAgentPlanner(
         generate_text_service=generate_text_service,
     )
@@ -192,6 +234,7 @@ def build_agent_runtime(
         get_shipment_tool=get_shipment_tool,
         summarize_shipment_service=summarize_shipment_service,
         analyze_shipment_service=analyze_shipment_service,
+        prepare_shipment_action_service=prepare_shipment_action_service,
         retrieve_context_tool=retrieve_context_tool,
         generate_text_service=generate_text_service,
         authorization_service=authorization_service,

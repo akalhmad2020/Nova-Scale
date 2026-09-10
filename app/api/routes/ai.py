@@ -6,6 +6,19 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.application.action_exceptions import (
+    AgentActionConflictError,
+    AgentActionExecutionError,
+    AgentActionInProgressError,
+    AgentActionNotFoundError,
+    AgentActionPermissionDeniedError,
+    PendingAgentActionExistsError,
+)
+from app.ai.application.agent.action_models import (
+    AgentActionStatus,
+    AgentActionType,
+    StoredAgentAction,
+)
 from app.ai.application.agent.conversation import (
     AgentContinuation,
     AgentContinuationKind,
@@ -26,12 +39,14 @@ from app.ai.application.agent.shipment_resolution_models import ShipmentIdentifi
 from app.ai.application.conversation_exceptions import ConversationNotFoundError
 from app.ai.application.conversation_models import ConversationDetail, ConversationSummary
 from app.ai.application.dependencies import (
+    build_agent_action_service,
     build_agent_runtime,
     build_analyze_shipment_service,
     build_answer_question_service,
     build_conversation_service,
     build_resolve_shipment_service,
 )
+from app.ai.application.services.agent_action_service import AgentActionService
 from app.ai.application.services.analyze_shipment import AnalyzeShipmentService
 from app.ai.application.services.answer_question import AnswerQuestionService
 from app.ai.application.services.conversation_service import ConversationService
@@ -96,9 +111,31 @@ class AgentContinuationResponse(BaseModel):
     original_identifier: str
 
 
+class AgentActionResponse(BaseModel):
+    id: UUID
+    action_type: AgentActionType
+    status: AgentActionStatus
+    resource_type: str
+    resource_id: UUID
+    shipment_identifier: str
+    summary: str
+    expected_status: str
+    target_status: str | None = None
+    new_notes: str | None = None
+    result_summary: str | None = None
+    failure_reason: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
 class AgentResponse(BaseModel):
     answer: str
     continuation: AgentContinuationResponse | None = None
+
+
+class AgentActionMutationResponse(BaseModel):
+    answer: str
+    action: AgentActionResponse
 
 
 class ConversationSummaryResponse(BaseModel):
@@ -122,6 +159,7 @@ class ConversationDetailResponse(BaseModel):
     updated_at: datetime
     messages: list[ConversationMessageResponse]
     continuation: AgentContinuationResponse | None = None
+    pending_action: AgentActionResponse | None = None
 
 
 class ShipmentOperationalIssueResponse(BaseModel):
@@ -163,6 +201,12 @@ def get_conversation_service(
     return build_conversation_service(session=session)
 
 
+def get_agent_action_service(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> AgentActionService:
+    return build_agent_action_service(session=session)
+
+
 def get_resolve_shipment_service() -> ResolveShipmentService:
     return build_resolve_shipment_service()
 
@@ -197,6 +241,27 @@ def _continuation_response(
     )
 
 
+def _agent_action_response(
+    action: StoredAgentAction,
+) -> AgentActionResponse:
+    return AgentActionResponse(
+        id=action.id,
+        action_type=action.action_type,
+        status=action.status,
+        resource_type=action.resource_type,
+        resource_id=action.resource_id,
+        shipment_identifier=action.shipment_identifier,
+        summary=action.summary,
+        expected_status=action.expected_status,
+        target_status=action.target_status,
+        new_notes=action.new_notes,
+        result_summary=action.result_summary,
+        failure_reason=action.failure_reason,
+        created_at=action.created_at,
+        updated_at=action.updated_at,
+    )
+
+
 def _conversation_summary_response(
     conversation: ConversationSummary,
 ) -> ConversationSummaryResponse:
@@ -210,6 +275,8 @@ def _conversation_summary_response(
 
 def _conversation_detail_response(
     conversation: ConversationDetail,
+    *,
+    pending_action: StoredAgentAction | None = None,
 ) -> ConversationDetailResponse:
     return ConversationDetailResponse(
         id=conversation.id,
@@ -226,6 +293,9 @@ def _conversation_detail_response(
             for message in conversation.messages
         ],
         continuation=_continuation_response(conversation.continuation),
+        pending_action=(
+            _agent_action_response(pending_action) if pending_action is not None else None
+        ),
     )
 
 
@@ -310,6 +380,7 @@ async def get_conversation(
     tenant_id: UUID,
     conversation_id: UUID,
     service: Annotated[ConversationService, Depends(get_conversation_service)],
+    action_service: Annotated[AgentActionService, Depends(get_agent_action_service)],
     membership: Annotated[
         Membership,
         Depends(require_entitlement(Entitlements.AI_ASSISTANT)),
@@ -327,7 +398,16 @@ async def get_conversation(
             detail="Conversation not found",
         ) from exc
 
-    return _conversation_detail_response(conversation)
+    pending_action = await action_service.get_active_for_conversation(
+        tenant_id=tenant_id,
+        user_id=membership.user_id,
+        conversation_id=conversation_id,
+    )
+
+    return _conversation_detail_response(
+        conversation,
+        pending_action=pending_action,
+    )
 
 
 @router.delete(
@@ -338,11 +418,24 @@ async def delete_conversation(
     tenant_id: UUID,
     conversation_id: UUID,
     service: Annotated[ConversationService, Depends(get_conversation_service)],
+    action_service: Annotated[AgentActionService, Depends(get_agent_action_service)],
     membership: Annotated[
         Membership,
         Depends(require_entitlement(Entitlements.AI_ASSISTANT)),
     ],
 ) -> Response:
+    active_action = await action_service.get_active_for_conversation(
+        tenant_id=tenant_id,
+        user_id=membership.user_id,
+        conversation_id=conversation_id,
+    )
+
+    if active_action is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=("Confirm or cancel the pending AI action before deleting this conversation"),
+        )
+
     try:
         await service.delete(
             tenant_id=tenant_id,
@@ -370,6 +463,10 @@ async def run_agent(
         ConversationService,
         Depends(get_conversation_service),
     ],
+    action_service: Annotated[
+        AgentActionService,
+        Depends(get_agent_action_service),
+    ],
     membership: Annotated[
         Membership,
         Depends(require_entitlement(Entitlements.AI_ASSISTANT)),
@@ -382,6 +479,20 @@ async def run_agent(
 
     try:
         if persistent_conversation_id is not None:
+            active_action = await action_service.get_active_for_conversation(
+                tenant_id=tenant_id,
+                user_id=membership.user_id,
+                conversation_id=persistent_conversation_id,
+            )
+
+            if active_action is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        "Confirm or cancel the pending AI action before sending another message"
+                    ),
+                )
+
             prepared_turn = await conversation_service.prepare_turn(
                 tenant_id=tenant_id,
                 user_id=membership.user_id,
@@ -420,6 +531,23 @@ async def run_agent(
             conversation_context=conversation_context,
         )
 
+        if result.action_proposal is not None:
+            if persistent_conversation_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        "AI write actions require a persistent conversation "
+                        "so confirmation can be recorded safely"
+                    ),
+                )
+
+            await action_service.propose(
+                tenant_id=tenant_id,
+                user_id=membership.user_id,
+                conversation_id=persistent_conversation_id,
+                proposal=result.action_proposal,
+            )
+
         if persistent_conversation_id is not None:
             await conversation_service.complete_turn(
                 tenant_id=tenant_id,
@@ -428,6 +556,12 @@ async def run_agent(
                 answer=result.answer,
                 continuation=result.continuation,
             )
+    except PendingAgentActionExistsError as exc:
+        await conversation_service.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Conversation already has a pending AI action",
+        ) from exc
     except ConversationNotFoundError as exc:
         await conversation_service.rollback()
         raise HTTPException(
@@ -442,6 +576,131 @@ async def run_agent(
     return AgentResponse(
         answer=result.answer,
         continuation=_continuation_response(result.continuation),
+    )
+
+
+@router.post(
+    "/tenants/{tenant_id}/actions/{action_id}/confirm",
+    response_model=AgentActionMutationResponse,
+)
+async def confirm_agent_action(
+    tenant_id: UUID,
+    action_id: UUID,
+    action_service: Annotated[AgentActionService, Depends(get_agent_action_service)],
+    conversation_service: Annotated[
+        ConversationService,
+        Depends(get_conversation_service),
+    ],
+    membership: Annotated[
+        Membership,
+        Depends(require_entitlement(Entitlements.AI_ASSISTANT)),
+    ],
+) -> AgentActionMutationResponse:
+    try:
+        mutation = await action_service.confirm(
+            tenant_id=tenant_id,
+            user_id=membership.user_id,
+            role_id=membership.role_id,
+            action_id=action_id,
+        )
+    except AgentActionNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="AI action not found",
+        ) from exc
+    except AgentActionPermissionDeniedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Permission denied for this AI action",
+        ) from exc
+    except AgentActionInProgressError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="AI action is already being executed",
+        ) from exc
+    except AgentActionConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc) or "AI action cannot be confirmed",
+        ) from exc
+    except AgentActionExecutionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+
+    action = mutation.action
+    answer = action.result_summary or "AI action completed."
+
+    if mutation.changed:
+        await conversation_service.complete_turn(
+            tenant_id=tenant_id,
+            user_id=membership.user_id,
+            conversation_id=action.conversation_id,
+            answer=answer,
+            continuation=None,
+        )
+
+    return AgentActionMutationResponse(
+        answer=answer,
+        action=_agent_action_response(action),
+    )
+
+
+@router.post(
+    "/tenants/{tenant_id}/actions/{action_id}/cancel",
+    response_model=AgentActionMutationResponse,
+)
+async def cancel_agent_action(
+    tenant_id: UUID,
+    action_id: UUID,
+    action_service: Annotated[AgentActionService, Depends(get_agent_action_service)],
+    conversation_service: Annotated[
+        ConversationService,
+        Depends(get_conversation_service),
+    ],
+    membership: Annotated[
+        Membership,
+        Depends(require_entitlement(Entitlements.AI_ASSISTANT)),
+    ],
+) -> AgentActionMutationResponse:
+    try:
+        mutation = await action_service.cancel(
+            tenant_id=tenant_id,
+            user_id=membership.user_id,
+            action_id=action_id,
+        )
+    except AgentActionNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="AI action not found",
+        ) from exc
+    except AgentActionInProgressError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="AI action is already being executed",
+        ) from exc
+    except AgentActionConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc) or "AI action cannot be cancelled",
+        ) from exc
+
+    action = mutation.action
+    answer = f"Cancelled pending AI action: {action.summary}"
+
+    if mutation.changed:
+        await conversation_service.complete_turn(
+            tenant_id=tenant_id,
+            user_id=membership.user_id,
+            conversation_id=action.conversation_id,
+            answer=answer,
+            continuation=None,
+        )
+
+    return AgentActionMutationResponse(
+        answer=answer,
+        action=_agent_action_response(action),
     )
 
 

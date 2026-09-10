@@ -5,6 +5,8 @@ import {
 } from "@tanstack/react-query";
 
 import {
+  cancelAgentAction,
+  confirmAgentAction,
   createConversation,
   deleteConversation,
   getConversation,
@@ -12,6 +14,7 @@ import {
   runAgent,
 } from "@/features/ai/api";
 import type {
+  AgentActionMutationResponse,
   AgentRequest,
   AgentResponse,
 } from "@/features/ai/types";
@@ -43,6 +46,40 @@ export function useRunAgent() {
           ),
         });
       }
+    },
+  });
+}
+
+export function useConfirmAgentAction() {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    AgentActionMutationResponse,
+    Error,
+    string
+  >({
+    mutationFn: confirmAgentAction,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: conversationKeys.all,
+      });
+    },
+  });
+}
+
+export function useCancelAgentAction() {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    AgentActionMutationResponse,
+    Error,
+    string
+  >({
+    mutationFn: cancelAgentAction,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: conversationKeys.all,
+      });
     },
   });
 }

@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Literal
 
+from app.ai.application.agent.action_models import AgentActionProposal
 from app.ai.application.agent.decision import AgentRoute
 
 AgentContinuationKind = Literal["shipment_selection",]
@@ -23,6 +24,7 @@ class AgentContinuation:
 class AgentExecutionResult:
     answer: str
     continuation: AgentContinuation | None = None
+    action_proposal: AgentActionProposal | None = None
 
 
 def is_shipment_continuation_route(

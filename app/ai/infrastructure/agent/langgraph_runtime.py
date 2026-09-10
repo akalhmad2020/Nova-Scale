@@ -5,6 +5,7 @@ from uuid import UUID
 
 from langgraph.graph import END, START, StateGraph
 
+from app.ai.application.action_exceptions import AgentActionProposalRejectedError
 from app.ai.application.agent.authorization import (
     AgentAuthorizationContext,
     AgentAuthorizationService,
@@ -32,6 +33,9 @@ from app.ai.application.services.analyze_shipment import (
     AnalyzeShipmentService,
 )
 from app.ai.application.services.generate_text import GenerateTextService
+from app.ai.application.services.prepare_shipment_action import (
+    PrepareShipmentActionService,
+)
 from app.ai.application.services.resolve_shipment import ResolveShipmentService
 from app.ai.application.services.summarize_shipment import (
     SummarizeShipmentService,
@@ -51,6 +55,7 @@ class LangGraphAgentRuntime:
         get_shipment_tool: GetShipmentTool,
         summarize_shipment_service: SummarizeShipmentService,
         analyze_shipment_service: AnalyzeShipmentService,
+        prepare_shipment_action_service: PrepareShipmentActionService,
         retrieve_context_tool: RetrieveContextTool,
         generate_text_service: GenerateTextService,
     ) -> None:
@@ -60,6 +65,7 @@ class LangGraphAgentRuntime:
         self._get_shipment_tool = get_shipment_tool
         self._summarize_shipment_service = summarize_shipment_service
         self._analyze_shipment_service = analyze_shipment_service
+        self._prepare_shipment_action_service = prepare_shipment_action_service
         self._retrieve_context_tool = retrieve_context_tool
         self._generate_text_service = generate_text_service
 
@@ -111,6 +117,16 @@ class LangGraphAgentRuntime:
         )
 
         graph.add_node(
+            "prepare_shipment_transition",
+            self._prepare_shipment_transition,
+        )
+
+        graph.add_node(
+            "prepare_shipment_notes_update",
+            self._prepare_shipment_notes_update,
+        )
+
+        graph.add_node(
             "retrieve_context",
             self._retrieve_context,
         )
@@ -150,6 +166,8 @@ class LangGraphAgentRuntime:
                 "analyze_shipment_operations": "resolve_shipment",
                 "retrieve_context": "retrieve_context",
                 "get_shipments": "resolve_shipments",
+                "transition_shipment_status": "resolve_shipment",
+                "update_shipment_notes": "resolve_shipment",
             },
         )
 
@@ -161,6 +179,8 @@ class LangGraphAgentRuntime:
                 "get_shipment": "get_shipment",
                 "summarize_shipment": "summarize_shipment",
                 "analyze_shipment_operations": "analyze_shipment_operations",
+                "transition_shipment_status": "prepare_shipment_transition",
+                "update_shipment_notes": "prepare_shipment_notes_update",
             },
         )
 
@@ -191,6 +211,16 @@ class LangGraphAgentRuntime:
         graph.add_edge(
             "analyze_shipment_operations",
             "answer",
+        )
+
+        graph.add_edge(
+            "prepare_shipment_transition",
+            END,
+        )
+
+        graph.add_edge(
+            "prepare_shipment_notes_update",
+            END,
         )
 
         graph.add_edge(
@@ -258,6 +288,9 @@ class LangGraphAgentRuntime:
                     shipment_identifiers=(),
                     shipment_ids=(),
                     shipment_resolutions=(),
+                    target_shipment_status=None,
+                    shipment_notes=None,
+                    action_proposal=None,
                 )
             ),
         )
@@ -267,10 +300,15 @@ class LangGraphAgentRuntime:
         if result["shipment_resolution_ambiguous"]:
             route = result["route"]
 
-            if route == "get_shipments":
+            if route in {
+                "get_shipments",
+                "transition_shipment_status",
+                "update_shipment_notes",
+            }:
                 return AgentExecutionResult(
                     answer=result["answer"],
                     continuation=None,
+                    action_proposal=result["action_proposal"],
                 )
 
             original_identifier = result["continuation_original_identifier"]
@@ -296,6 +334,7 @@ class LangGraphAgentRuntime:
         return AgentExecutionResult(
             answer=result["answer"],
             continuation=result_continuation,
+            action_proposal=result["action_proposal"],
         )
 
     async def _prepare(
@@ -313,6 +352,9 @@ class LangGraphAgentRuntime:
                 "shipment_identifiers": (),
                 "shipment_ids": (),
                 "shipment_resolutions": (),
+                "target_shipment_status": None,
+                "shipment_notes": None,
+                "action_proposal": None,
                 "shipment_resolution_ambiguous": False,
             }
 
@@ -329,6 +371,9 @@ class LangGraphAgentRuntime:
             "shipment_identifiers": (),
             "shipment_ids": (),
             "shipment_resolutions": (),
+            "target_shipment_status": None,
+            "shipment_notes": None,
+            "action_proposal": None,
             "shipment_resolution_ambiguous": False,
         }
 
@@ -383,6 +428,9 @@ class LangGraphAgentRuntime:
                 "shipment_identifiers": (),
                 "shipment_ids": (),
                 "shipment_resolutions": (),
+                "target_shipment_status": None,
+                "shipment_notes": None,
+                "action_proposal": None,
                 "continuation_route": None,
                 "continuation_original_identifier": None,
                 "shipment_resolution_ambiguous": False,
@@ -396,6 +444,9 @@ class LangGraphAgentRuntime:
             "shipment_identifiers": decision.shipment_identifiers,
             "shipment_ids": (),
             "shipment_resolutions": (),
+            "target_shipment_status": decision.target_shipment_status,
+            "shipment_notes": decision.shipment_notes,
+            "action_proposal": None,
             "continuation_route": None,
             "continuation_original_identifier": None,
             "shipment_resolution_ambiguous": False,
@@ -458,18 +509,35 @@ class LangGraphAgentRuntime:
                 identifier=shipment_identifier,
             )
         except ShipmentIdentifierAmbiguousError:
+            route = state["route"]
+
+            if route in {
+                "transition_shipment_status",
+                "update_shipment_notes",
+            }:
+                answer = (
+                    f"I found multiple shipments matching '{shipment_identifier}'. "
+                    "For write actions, please repeat the full request using the "
+                    "shipment tracking number or UUID."
+                )
+                continuation_route = None
+                continuation_original_identifier = None
+            else:
+                answer = (
+                    f"I found multiple shipments matching '{shipment_identifier}'. "
+                    "Please provide the shipment tracking number or UUID "
+                    "so I can identify the correct shipment."
+                )
+                continuation_route = route
+                continuation_original_identifier = shipment_identifier
+
             return {
                 **state,
                 "shipment_id": None,
-                "continuation_route": state["route"],
-                "continuation_original_identifier": shipment_identifier,
+                "continuation_route": continuation_route,
+                "continuation_original_identifier": continuation_original_identifier,
                 "shipment_resolution_ambiguous": True,
-                "answer": (
-                    f"I found multiple shipments matching "
-                    f"'{shipment_identifier}'. "
-                    "Please provide the shipment tracking number or UUID "
-                    "so I can identify the correct shipment."
-                ),
+                "answer": answer,
             }
 
         return {
@@ -548,6 +616,8 @@ class LangGraphAgentRuntime:
             "get_shipment",
             "summarize_shipment",
             "analyze_shipment_operations",
+            "transition_shipment_status",
+            "update_shipment_notes",
         }:
             raise RuntimeError("Resolved shipment cannot be routed to this agent action")
 
@@ -729,6 +799,74 @@ class LangGraphAgentRuntime:
         return {
             **state,
             "tool_result": tool_result,
+        }
+
+    async def _prepare_shipment_transition(
+        self,
+        state: AgentState,
+    ) -> AgentState:
+        shipment_id = state["shipment_id"]
+        shipment_identifier = state["shipment_identifier"]
+        target_status = state["target_shipment_status"]
+
+        if shipment_id is None or shipment_identifier is None:
+            raise RuntimeError("Resolved shipment is required for shipment transition action")
+
+        if target_status is None:
+            raise RuntimeError("Target status is required for shipment transition action")
+
+        try:
+            proposal = await self._prepare_shipment_action_service.prepare_transition(
+                tenant_id=state["tenant_id"],
+                shipment_id=shipment_id,
+                shipment_identifier=shipment_identifier,
+                target_status=target_status,
+            )
+        except AgentActionProposalRejectedError as exc:
+            return {
+                **state,
+                "action_proposal": None,
+                "answer": f"I cannot prepare that action: {exc}",
+            }
+
+        return {
+            **state,
+            "action_proposal": proposal,
+            "answer": proposal.confirmation_message,
+        }
+
+    async def _prepare_shipment_notes_update(
+        self,
+        state: AgentState,
+    ) -> AgentState:
+        shipment_id = state["shipment_id"]
+        shipment_identifier = state["shipment_identifier"]
+        shipment_notes = state["shipment_notes"]
+
+        if shipment_id is None or shipment_identifier is None:
+            raise RuntimeError("Resolved shipment is required for shipment notes action")
+
+        if shipment_notes is None:
+            raise RuntimeError("Shipment notes are required for shipment notes action")
+
+        try:
+            proposal = await self._prepare_shipment_action_service.prepare_notes_update(
+                tenant_id=state["tenant_id"],
+                shipment_id=shipment_id,
+                shipment_identifier=shipment_identifier,
+                new_notes=shipment_notes,
+            )
+        except AgentActionProposalRejectedError as exc:
+            return {
+                **state,
+                "action_proposal": None,
+                "answer": f"I cannot prepare that action: {exc}",
+            }
+
+        return {
+            **state,
+            "action_proposal": proposal,
+            "answer": proposal.confirmation_message,
         }
 
     async def _retrieve_context(

@@ -6,6 +6,7 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+from app.ai.infrastructure.actions.models import AIAgentAction  # noqa: F401
 from app.ai.infrastructure.conversations.models import (  # noqa: F401
     AIConversation,
     AIConversationMessage,
