@@ -6,6 +6,9 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.application.agent.authorization import (
+    AgentAuthorizationService,
+)
 from app.ai.application.agent.decision import AgentDecision
 from app.ai.application.agent.get_shipment_tool import GetShipmentTool
 from app.ai.application.agent.retrieve_context_tool import RetrieveContextTool
@@ -61,6 +64,19 @@ from tests.unit.ai.fakes import (
     FakeLLMProvider,
     FakeVectorStore,
 )
+
+TEST_ROLE_ID = UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+
+
+async def allow_all_permissions(
+    role_id: UUID,
+    permission_code: str,
+) -> bool:
+    del role_id
+    del permission_code
+
+    return True
+
 
 SetTenantContext = Callable[[UUID], Awaitable[None]]
 
@@ -218,6 +234,9 @@ def build_runtime(
 
     return LangGraphAgentRuntime(
         agent_planner=planner,
+        authorization_service=AgentAuthorizationService(
+            permission_checker=allow_all_permissions,
+        ),
         resolve_shipment_service=build_resolve_shipment_service(),
         get_shipment_tool=GetShipmentTool(
             get_shipment=get_get_shipment_use_case(),
@@ -283,6 +302,7 @@ async def test_agent_summarizes_real_shipment_timeline(
     try:
         answer = await runtime.execute(
             tenant_id=tenant.id,
+            role_id=TEST_ROLE_ID,
             question=question,
         )
     finally:
@@ -388,6 +408,7 @@ async def test_agent_shipment_summary_resolves_reference(
     try:
         answer = await runtime.execute(
             tenant_id=tenant.id,
+            role_id=TEST_ROLE_ID,
             question=question,
         )
     finally:
@@ -467,6 +488,7 @@ async def test_agent_shipment_summary_respects_tenant_isolation(
         with pytest.raises(ShipmentNotFoundError):
             await runtime.execute(
                 tenant_id=foreign_tenant.id,
+                role_id=TEST_ROLE_ID,
                 question=question,
             )
     finally:

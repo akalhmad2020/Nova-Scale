@@ -2,6 +2,9 @@ from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.application.agent.authorization import (
+    AgentAuthorizationService,
+)
 from app.ai.application.agent.get_shipment_tool import GetShipmentTool
 from app.ai.application.agent.retrieve_context_tool import RetrieveContextTool
 from app.ai.application.agent.shipment_summary_tool import ShipmentSummaryTool
@@ -24,6 +27,9 @@ from app.ai.application.services.retrieve_context import RetrieveContextService
 from app.ai.application.services.summarize_shipment import (
     SummarizeShipmentService,
 )
+from app.ai.infrastructure.agent.identity_permission_checker import (
+    IdentityPermissionChecker,
+)
 from app.ai.infrastructure.agent.langgraph_runtime import (
     LangGraphAgentRuntime,
 )
@@ -40,6 +46,9 @@ from app.ai.infrastructure.vector_store.postgres_vector_store import (
 )
 from app.core.config import Settings
 from app.core.database import SessionFactory
+from app.modules.identity.api.dependencies import (
+    get_check_permission_use_case,
+)
 from app.modules.shipment_events.api.dependencies import (
     get_list_shipment_events_use_case,
 )
@@ -141,6 +150,12 @@ def build_agent_runtime(
         generate_text_service=generate_text_service,
     )
 
+    authorization_service = AgentAuthorizationService(
+        permission_checker=IdentityPermissionChecker(
+            check_permission=get_check_permission_use_case(),
+        ),
+    )
+
     resolve_shipment_service = build_resolve_shipment_service()
 
     summarize_shipment_service = build_summarize_shipment_service(settings)
@@ -166,6 +181,7 @@ def build_agent_runtime(
         analyze_shipment_service=analyze_shipment_service,
         retrieve_context_tool=retrieve_context_tool,
         generate_text_service=generate_text_service,
+        authorization_service=authorization_service,
     )
 
 

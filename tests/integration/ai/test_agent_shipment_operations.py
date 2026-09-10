@@ -6,6 +6,9 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.application.agent.authorization import (
+    AgentAuthorizationService,
+)
 from app.ai.application.agent.decision import AgentDecision
 from app.ai.application.agent.get_shipment_tool import GetShipmentTool
 from app.ai.application.agent.retrieve_context_tool import RetrieveContextTool
@@ -59,6 +62,19 @@ from tests.unit.ai.fakes import (
     FakeLLMProvider,
     FakeVectorStore,
 )
+
+TEST_ROLE_ID = UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+
+
+async def allow_all_permissions(
+    role_id: UUID,
+    permission_code: str,
+) -> bool:
+    del role_id
+    del permission_code
+
+    return True
+
 
 SetTenantContext = Callable[[UUID], Awaitable[None]]
 
@@ -191,6 +207,9 @@ def build_runtime(
         generate_text_service=GenerateTextService(
             provider=llm_provider,
         ),
+        authorization_service=AgentAuthorizationService(
+            permission_checker=allow_all_permissions,
+        ),
     )
 
 
@@ -243,6 +262,7 @@ async def test_agent_detects_stale_in_transit_shipment(
     try:
         answer = await runtime.execute(
             tenant_id=tenant.id,
+            role_id=TEST_ROLE_ID,
             question=question,
         )
     finally:
@@ -322,6 +342,7 @@ async def test_agent_reports_healthy_recent_in_transit_shipment(
     try:
         answer = await runtime.execute(
             tenant_id=tenant.id,
+            role_id=TEST_ROLE_ID,
             question=question,
         )
     finally:
@@ -401,6 +422,7 @@ async def test_agent_operational_analysis_respects_tenant_isolation(
         with pytest.raises(ShipmentNotFoundError):
             await runtime.execute(
                 tenant_id=foreign_tenant.id,
+                role_id=TEST_ROLE_ID,
                 question=(f"Analyze shipment {shipment.tracking_number} for operational issues."),
             )
     finally:

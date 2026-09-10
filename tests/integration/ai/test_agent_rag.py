@@ -1,7 +1,7 @@
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.core.database  # noqa: F401
@@ -17,6 +17,12 @@ from app.core.config import get_settings
 from app.core.tenant_context import (
     reset_current_tenant_id,
     set_current_tenant_id,
+)
+from app.modules.identity.domain.permissions import Permissions
+from app.modules.identity.infrastructure.models.permission import Permission
+from app.modules.identity.infrastructure.models.role import Role
+from app.modules.identity.infrastructure.models.role_permission import (
+    RolePermission,
 )
 
 
@@ -38,6 +44,46 @@ async def set_session_tenant_context(
     )
 
 
+async def create_role_with_permission(
+    *,
+    session: AsyncSession,
+    permission_code: str,
+) -> UUID:
+    permission = await session.scalar(
+        select(Permission).where(
+            Permission.code == permission_code,
+        )
+    )
+
+    if permission is None:
+        permission = Permission(
+            code=permission_code,
+            description=f"Integration test permission: {permission_code}",
+        )
+
+        session.add(permission)
+        await session.flush()
+
+    role = Role(
+        name=f"ai-integration-role-{uuid4()}",
+        description="AI integration test role",
+    )
+
+    session.add(role)
+    await session.flush()
+
+    session.add(
+        RolePermission(
+            role_id=role.id,
+            permission_id=permission.id,
+        )
+    )
+
+    await session.flush()
+
+    return role.id
+
+
 @pytest.mark.integration
 @pytest.mark.external_ai
 @pytest.mark.asyncio
@@ -48,6 +94,11 @@ async def test_agent_answers_from_real_rag_context(
     document_id = str(uuid4())
 
     settings = get_settings()
+
+    role_id = await create_role_with_permission(
+        session=db_session,
+        permission_code=Permissions.DOCUMENT_READ,
+    )
 
     embedding_provider = build_embedding_provider(settings)
 
@@ -96,18 +147,23 @@ async def test_agent_answers_from_real_rag_context(
         tenant_id,
     )
 
-    tenant_context_token = set_current_tenant_id(tenant_id)
+    tenant_context_token = set_current_tenant_id(
+        tenant_id,
+    )
 
     try:
         answer = await runtime.execute(
             tenant_id=tenant_id,
+            role_id=role_id,
             question=(
                 "According to our tenant shipping documents, "
                 "within how many hours must damaged cargo be reported?"
             ),
         )
     finally:
-        reset_current_tenant_id(tenant_context_token)
+        reset_current_tenant_id(
+            tenant_context_token,
+        )
 
     assert answer.strip()
 
@@ -127,6 +183,11 @@ async def test_agent_rag_cannot_retrieve_context_from_another_tenant(
     document_id = str(uuid4())
 
     settings = get_settings()
+
+    role_id = await create_role_with_permission(
+        session=db_session,
+        permission_code=Permissions.DOCUMENT_READ,
+    )
 
     embedding_provider = build_embedding_provider(settings)
 
@@ -173,18 +234,23 @@ async def test_agent_rag_cannot_retrieve_context_from_another_tenant(
         foreign_tenant_id,
     )
 
-    tenant_context_token = set_current_tenant_id(foreign_tenant_id)
+    tenant_context_token = set_current_tenant_id(
+        foreign_tenant_id,
+    )
 
     try:
         answer = await runtime.execute(
             tenant_id=foreign_tenant_id,
+            role_id=role_id,
             question=(
                 "According to our tenant documents, "
                 "within how many hours must damaged cargo be reported?"
             ),
         )
     finally:
-        reset_current_tenant_id(tenant_context_token)
+        reset_current_tenant_id(
+            tenant_context_token,
+        )
 
     assert answer.strip()
 
