@@ -6,7 +6,16 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from app.ai.application.agent.authorization import (
+    AgentAuthorizationService,
+)
+from app.ai.application.agent.conversation import AgentContinuation
+from app.ai.application.agent.conversation_context import (
+    ConversationContext,
+    ConversationMessage,
+)
 from app.ai.application.agent.decision import AgentDecision
+from app.ai.application.agent.exceptions import AgentPlanningError
 from app.ai.application.agent.get_shipment_tool import GetShipmentTool
 from app.ai.application.agent.retrieve_context_tool import (
     RetrieveContextTool,
@@ -15,6 +24,7 @@ from app.ai.application.agent.shipment_operational_models import (
     ShipmentOperationalAnalysis,
     ShipmentOperationalIssue,
 )
+from app.ai.application.ports.agent_planner import AgentPlanner
 from app.ai.application.services.analyze_shipment import (
     AnalyzeShipmentService,
 )
@@ -29,6 +39,7 @@ from app.ai.domain.rag_models import DocumentChunk, RetrievedChunk
 from app.ai.infrastructure.agent.langgraph_runtime import (
     LangGraphAgentRuntime,
 )
+from app.modules.identity.domain.permissions import Permissions
 from app.modules.shipments.application.exceptions import ShipmentNotFoundError
 from app.modules.shipments.application.use_cases.get_shipment import GetShipment
 from app.modules.shipments.domain.enums import (
@@ -44,6 +55,8 @@ from tests.unit.ai.fakes import (
     FakeVectorStore,
 )
 from tests.unit.shipments.fakes import FakeUnitOfWork
+
+TEST_ROLE_ID = UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 
 
 def make_shipment(
@@ -146,9 +159,19 @@ def make_retrieve_context_tool(
     )
 
 
+async def allow_all_permissions(
+    role_id: UUID,
+    permission_code: str,
+) -> bool:
+    del role_id
+    del permission_code
+
+    return True
+
+
 def make_runtime(
     *,
-    planner: FakeAgentPlanner,
+    planner: AgentPlanner,
     uow: FakeUnitOfWork,
     llm_provider: FakeLLMProvider,
     summarize_shipment_service: SummarizeShipmentService,
@@ -172,6 +195,9 @@ def make_runtime(
         summarize_shipment_service=summarize_shipment_service,
         analyze_shipment_service=analyze_shipment_service,
         retrieve_context_tool=retrieve_context_tool,
+        authorization_service=AgentAuthorizationService(
+            permission_checker=allow_all_permissions,
+        ),
         generate_text_service=GenerateTextService(
             provider=llm_provider,
         ),
@@ -197,6 +223,7 @@ async def test_langgraph_agent_runtime_direct_answer_route() -> None:
 
     result = await runtime.execute(
         tenant_id=tenant_id,
+        role_id=TEST_ROLE_ID,
         question="What can you help me with?",
     )
 
@@ -246,6 +273,7 @@ async def test_langgraph_agent_runtime_get_shipment_by_tracking_number() -> None
 
     result = await runtime.execute(
         tenant_id=tenant_id,
+        role_id=TEST_ROLE_ID,
         question="Where is shipment SHIP-001?",
     )
 
@@ -302,6 +330,7 @@ async def test_langgraph_agent_runtime_get_shipment_by_reference() -> None:
 
     result = await runtime.execute(
         tenant_id=tenant_id,
+        role_id=TEST_ROLE_ID,
         question="Where is shipment ORDER-100?",
     )
 
@@ -343,6 +372,7 @@ async def test_langgraph_agent_runtime_get_shipment_by_uuid() -> None:
 
     result = await runtime.execute(
         tenant_id=tenant_id,
+        role_id=TEST_ROLE_ID,
         question=f"Where is shipment {shipment.id}?",
     )
 
@@ -382,6 +412,7 @@ async def test_langgraph_agent_runtime_uses_runtime_tenant_context() -> None:
     with pytest.raises(ShipmentNotFoundError):
         await runtime.execute(
             tenant_id=uuid4(),
+            role_id=TEST_ROLE_ID,
             question="Where is shipment SHIP-001?",
         )
 
@@ -426,6 +457,7 @@ async def test_langgraph_agent_runtime_retrieve_context_route() -> None:
 
     result = await runtime.execute(
         tenant_id=tenant_id,
+        role_id=TEST_ROLE_ID,
         question="What does our shipment insurance cover?",
     )
 
@@ -483,6 +515,7 @@ async def test_langgraph_agent_runtime_summarize_shipment_by_tracking_number() -
 
     result = await runtime.execute(
         tenant_id=tenant_id,
+        role_id=TEST_ROLE_ID,
         question="Summarize shipment SHIP-001.",
     )
 
@@ -530,6 +563,7 @@ async def test_langgraph_agent_runtime_summarize_shipment_by_reference() -> None
 
     result = await runtime.execute(
         tenant_id=tenant_id,
+        role_id=TEST_ROLE_ID,
         question="Summarize shipment ORDER-100.",
     )
 
@@ -567,6 +601,7 @@ async def test_langgraph_agent_runtime_requires_shipment_identifier() -> None:
     ):
         await runtime.execute(
             tenant_id=uuid4(),
+            role_id=TEST_ROLE_ID,
             question="Summarize my shipment.",
         )
 
@@ -623,6 +658,7 @@ async def test_langgraph_agent_runtime_analyzes_shipment_operations() -> None:
 
     result = await runtime.execute(
         tenant_id=tenant_id,
+        role_id=TEST_ROLE_ID,
         question=("Is there anything wrong with shipment SHIP-001?"),
     )
 
@@ -696,6 +732,7 @@ async def test_langgraph_agent_runtime_reports_clean_operational_analysis() -> N
 
     result = await runtime.execute(
         tenant_id=tenant_id,
+        role_id=TEST_ROLE_ID,
         question=("Does shipment ORDER-100 have any operational issues?"),
     )
 
@@ -717,3 +754,905 @@ async def test_langgraph_agent_runtime_reports_clean_operational_analysis() -> N
     assert "Highest severity: info" in prompt
     assert "Risk score: 0/100" in prompt
     assert "Risk level: low" in prompt
+
+
+@pytest.mark.asyncio
+async def test_langgraph_agent_runtime_handles_ambiguous_shipment_reference() -> None:
+    tenant_id = uuid4()
+
+    first_shipment = make_shipment(
+        tenant_id=tenant_id,
+    )
+    first_shipment.tracking_number = "SHIP-001"
+
+    second_shipment = make_shipment(
+        tenant_id=tenant_id,
+    )
+    second_shipment.tracking_number = "SHIP-002"
+
+    uow = FakeUnitOfWork()
+    uow.shipments.add(first_shipment)
+    uow.shipments.add(second_shipment)
+
+    planner = FakeAgentPlanner()
+    planner.decision = AgentDecision(
+        route="get_shipment",
+        shipment_identifier="ORDER-100",
+    )
+
+    llm_provider = FakeLLMProvider()
+
+    summarize_shipment_service, summarize_execute_mock = make_summarize_shipment_service()
+    analyze_shipment_service, analyze_execute_mock = make_analyze_shipment_service()
+
+    runtime = make_runtime(
+        planner=planner,
+        uow=uow,
+        llm_provider=llm_provider,
+        summarize_shipment_service=summarize_shipment_service,
+        analyze_shipment_service=analyze_shipment_service,
+    )
+
+    result = await runtime.execute(
+        tenant_id=tenant_id,
+        role_id=TEST_ROLE_ID,
+        question="Where is shipment ORDER-100?",
+    )
+
+    assert result == (
+        "I found multiple shipments matching 'ORDER-100'. "
+        "Please provide the shipment tracking number or UUID "
+        "so I can identify the correct shipment."
+    )
+
+    assert llm_provider.requests == []
+    summarize_execute_mock.assert_not_awaited()
+    analyze_execute_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_langgraph_agent_runtime_continues_after_ambiguous_shipment_selection() -> None:
+    tenant_id = uuid4()
+
+    first_shipment = make_shipment(
+        tenant_id=tenant_id,
+    )
+    first_shipment.tracking_number = "SHIP-001"
+
+    second_shipment = make_shipment(
+        tenant_id=tenant_id,
+    )
+    second_shipment.tracking_number = "SHIP-002"
+
+    uow = FakeUnitOfWork()
+    uow.shipments.add(first_shipment)
+    uow.shipments.add(second_shipment)
+
+    planner = FakeAgentPlanner()
+    planner.decision = AgentDecision(
+        route="get_shipment",
+        shipment_identifier="ORDER-100",
+    )
+
+    llm_provider = FakeLLMProvider()
+
+    summarize_shipment_service, _ = make_summarize_shipment_service()
+
+    runtime = make_runtime(
+        planner=planner,
+        uow=uow,
+        llm_provider=llm_provider,
+        summarize_shipment_service=summarize_shipment_service,
+    )
+
+    first_result = await runtime.execute_with_context(
+        tenant_id=tenant_id,
+        role_id=TEST_ROLE_ID,
+        question="Where is shipment ORDER-100?",
+    )
+
+    assert first_result.answer == (
+        "I found multiple shipments matching 'ORDER-100'. "
+        "Please provide the shipment tracking number or UUID "
+        "so I can identify the correct shipment."
+    )
+
+    assert first_result.continuation == AgentContinuation(
+        kind="shipment_selection",
+        route="get_shipment",
+        original_identifier="ORDER-100",
+    )
+
+    assert planner.questions == [
+        "Where is shipment ORDER-100?",
+    ]
+
+    second_result = await runtime.execute_with_context(
+        tenant_id=tenant_id,
+        role_id=TEST_ROLE_ID,
+        question="SHIP-002",
+        continuation=first_result.continuation,
+    )
+
+    assert second_result.answer == "fake response"
+    assert second_result.continuation is None
+
+    # The continuation must resume the original route directly.
+    # The planner must not classify the follow-up again.
+    assert planner.questions == [
+        "Where is shipment ORDER-100?",
+    ]
+
+    assert len(llm_provider.requests) == 1
+
+    prompt = llm_provider.requests[0].messages[-1].content
+
+    assert f"Shipment id: {second_shipment.id}" in prompt
+    assert "Tracking number: SHIP-002" in prompt
+    assert "Reference: ORDER-100" in prompt
+    assert f"Shipment id: {first_shipment.id}" not in prompt
+
+
+@pytest.mark.asyncio
+async def test_langgraph_agent_runtime_denies_unauthorized_tool() -> None:
+    tenant_id = uuid4()
+
+    shipment = make_shipment(
+        tenant_id=tenant_id,
+    )
+
+    uow = FakeUnitOfWork()
+    uow.shipments.add(shipment)
+
+    planner = FakeAgentPlanner()
+    planner.decision = AgentDecision(
+        route="get_shipment",
+        shipment_identifier="SHIP-001",
+    )
+
+    llm_provider = FakeLLMProvider()
+
+    summarize_shipment_service, _ = make_summarize_shipment_service()
+    analyze_shipment_service, _ = make_analyze_shipment_service()
+
+    async def deny_permissions(
+        role_id: UUID,
+        permission_code: str,
+    ) -> bool:
+        del role_id
+        del permission_code
+
+        return False
+
+    runtime = LangGraphAgentRuntime(
+        agent_planner=planner,
+        authorization_service=AgentAuthorizationService(
+            permission_checker=deny_permissions,
+        ),
+        resolve_shipment_service=ResolveShipmentService(
+            unit_of_work=uow,
+        ),
+        get_shipment_tool=GetShipmentTool(
+            get_shipment=GetShipment(uow),
+        ),
+        summarize_shipment_service=summarize_shipment_service,
+        analyze_shipment_service=analyze_shipment_service,
+        retrieve_context_tool=make_retrieve_context_tool(),
+        generate_text_service=GenerateTextService(
+            provider=llm_provider,
+        ),
+    )
+
+    result = await runtime.execute(
+        tenant_id=tenant_id,
+        role_id=TEST_ROLE_ID,
+        question="Where is shipment SHIP-001?",
+    )
+
+    assert result == ("You do not have permission to use the requested NovaScale capability.")
+
+    assert llm_provider.requests == []
+
+
+@pytest.mark.asyncio
+async def test_langgraph_agent_runtime_reauthorizes_continuation() -> None:
+    tenant_id = uuid4()
+
+    shipment = make_shipment(
+        tenant_id=tenant_id,
+    )
+
+    shipment.tracking_number = "SHIP-002"
+
+    uow = FakeUnitOfWork()
+    uow.shipments.add(shipment)
+
+    planner = FakeAgentPlanner()
+
+    llm_provider = FakeLLMProvider()
+
+    summarize_shipment_service, summarize_execute_mock = make_summarize_shipment_service()
+
+    analyze_shipment_service, analyze_execute_mock = make_analyze_shipment_service()
+
+    permission_checks: list[
+        tuple[
+            UUID,
+            str,
+        ]
+    ] = []
+
+    async def deny_permissions(
+        role_id: UUID,
+        permission_code: str,
+    ) -> bool:
+        permission_checks.append(
+            (
+                role_id,
+                permission_code,
+            )
+        )
+
+        return False
+
+    runtime = LangGraphAgentRuntime(
+        agent_planner=planner,
+        authorization_service=AgentAuthorizationService(
+            permission_checker=deny_permissions,
+        ),
+        resolve_shipment_service=ResolveShipmentService(
+            unit_of_work=uow,
+        ),
+        get_shipment_tool=GetShipmentTool(
+            get_shipment=GetShipment(uow),
+        ),
+        summarize_shipment_service=summarize_shipment_service,
+        analyze_shipment_service=analyze_shipment_service,
+        retrieve_context_tool=make_retrieve_context_tool(),
+        generate_text_service=GenerateTextService(
+            provider=llm_provider,
+        ),
+    )
+
+    continuation = AgentContinuation(
+        kind="shipment_selection",
+        route="get_shipment",
+        original_identifier="ORDER-100",
+    )
+
+    result = await runtime.execute_with_context(
+        tenant_id=tenant_id,
+        role_id=TEST_ROLE_ID,
+        question="SHIP-002",
+        continuation=continuation,
+    )
+
+    assert result.answer == (
+        "You do not have permission to use the requested NovaScale capability."
+    )
+
+    assert result.continuation is None
+
+    assert permission_checks == [
+        (
+            TEST_ROLE_ID,
+            Permissions.SHIPMENT_READ,
+        )
+    ]
+
+    # A continuation must bypass only planning,
+    # never authorization.
+    assert planner.questions == []
+
+    # No shipment capability or downstream LLM call
+    # may run after authorization is denied.
+    assert llm_provider.requests == []
+
+    summarize_execute_mock.assert_not_awaited()
+    analyze_execute_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_langgraph_agent_runtime_gets_multiple_shipments() -> None:
+    tenant_id = uuid4()
+
+    first_shipment = make_shipment(
+        tenant_id=tenant_id,
+    )
+    first_shipment.tracking_number = "SHIP-001"
+    first_shipment.reference = "ORDER-100"
+
+    second_shipment = make_shipment(
+        tenant_id=tenant_id,
+    )
+    second_shipment.tracking_number = "SHIP-002"
+    second_shipment.reference = "ORDER-200"
+
+    uow = FakeUnitOfWork()
+    uow.shipments.add(first_shipment)
+    uow.shipments.add(second_shipment)
+
+    planner = FakeAgentPlanner()
+    planner.decision = AgentDecision(
+        route="get_shipments",
+        shipment_identifiers=(
+            "SHIP-001",
+            "SHIP-002",
+        ),
+    )
+
+    llm_provider = FakeLLMProvider()
+
+    summarize_shipment_service, _ = make_summarize_shipment_service()
+
+    runtime = make_runtime(
+        planner=planner,
+        uow=uow,
+        llm_provider=llm_provider,
+        summarize_shipment_service=summarize_shipment_service,
+    )
+
+    result = await runtime.execute(
+        tenant_id=tenant_id,
+        role_id=TEST_ROLE_ID,
+        question="Compare SHIP-001 and SHIP-002.",
+    )
+
+    assert result == "fake response"
+
+    assert planner.questions == [
+        "Compare SHIP-001 and SHIP-002.",
+    ]
+
+    assert len(llm_provider.requests) == 1
+
+    request = llm_provider.requests[0]
+
+    assert request.temperature == 0.0
+
+    prompt = request.messages[-1].content
+
+    assert "Compare SHIP-001 and SHIP-002." in prompt
+
+    assert "Shipment 1:" in prompt
+    assert f"Shipment id: {first_shipment.id}" in prompt
+    assert "Tracking number: SHIP-001" in prompt
+    assert "Reference: ORDER-100" in prompt
+
+    assert "Shipment 2:" in prompt
+    assert f"Shipment id: {second_shipment.id}" in prompt
+    assert "Tracking number: SHIP-002" in prompt
+    assert "Reference: ORDER-200" in prompt
+
+    first_position = prompt.index("Tracking number: SHIP-001")
+    second_position = prompt.index("Tracking number: SHIP-002")
+
+    assert first_position < second_position
+
+
+@pytest.mark.asyncio
+async def test_multi_shipment_returns_partial_result_when_one_is_missing() -> None:
+    tenant_id = uuid4()
+
+    shipment = make_shipment(
+        tenant_id=tenant_id,
+    )
+    shipment.tracking_number = "SHIP-001"
+    shipment.reference = "ORDER-100"
+
+    uow = FakeUnitOfWork()
+    uow.shipments.add(shipment)
+
+    planner = FakeAgentPlanner()
+    planner.decision = AgentDecision(
+        route="get_shipments",
+        shipment_identifiers=(
+            "SHIP-001",
+            "SHIP-MISSING",
+        ),
+    )
+
+    llm_provider = FakeLLMProvider()
+
+    summarize_shipment_service, _ = make_summarize_shipment_service()
+
+    runtime = make_runtime(
+        planner=planner,
+        uow=uow,
+        llm_provider=llm_provider,
+        summarize_shipment_service=summarize_shipment_service,
+    )
+
+    result = await runtime.execute(
+        tenant_id=tenant_id,
+        role_id=TEST_ROLE_ID,
+        question="Compare SHIP-001 and SHIP-MISSING.",
+    )
+
+    assert result == "fake response"
+
+    assert planner.questions == [
+        "Compare SHIP-001 and SHIP-MISSING.",
+    ]
+
+    assert len(llm_provider.requests) == 1
+
+    prompt = llm_provider.requests[0].messages[-1].content
+
+    assert "Shipment 1:" in prompt
+    assert "Identifier: SHIP-001" in prompt
+    assert "Resolution status: resolved" in prompt
+    assert f"Shipment id: {shipment.id}" in prompt
+    assert "Tracking number: SHIP-001" in prompt
+
+    assert "Shipment 2:" in prompt
+    assert "Identifier: SHIP-MISSING" in prompt
+    assert "Resolution status: not_found" in prompt
+    assert "The shipment could not be found for the current tenant." in prompt
+
+
+@pytest.mark.asyncio
+async def test_multi_shipment_returns_partial_result_for_ambiguous_identifier() -> None:
+    tenant_id = uuid4()
+
+    first_match = make_shipment(
+        tenant_id=tenant_id,
+    )
+    first_match.tracking_number = "SHIP-001"
+    first_match.reference = "ORDER-100"
+
+    second_match = make_shipment(
+        tenant_id=tenant_id,
+    )
+    second_match.tracking_number = "SHIP-002"
+    second_match.reference = "ORDER-100"
+
+    unique_shipment = make_shipment(
+        tenant_id=tenant_id,
+    )
+    unique_shipment.tracking_number = "SHIP-003"
+    unique_shipment.reference = "ORDER-300"
+
+    uow = FakeUnitOfWork()
+    uow.shipments.add(first_match)
+    uow.shipments.add(second_match)
+    uow.shipments.add(unique_shipment)
+
+    planner = FakeAgentPlanner()
+    planner.decision = AgentDecision(
+        route="get_shipments",
+        shipment_identifiers=(
+            "ORDER-100",
+            "SHIP-003",
+        ),
+    )
+
+    llm_provider = FakeLLMProvider()
+
+    summarize_shipment_service, _ = make_summarize_shipment_service()
+
+    runtime = make_runtime(
+        planner=planner,
+        uow=uow,
+        llm_provider=llm_provider,
+        summarize_shipment_service=summarize_shipment_service,
+    )
+
+    result = await runtime.execute_with_context(
+        tenant_id=tenant_id,
+        role_id=TEST_ROLE_ID,
+        question="Compare ORDER-100 and SHIP-003.",
+    )
+
+    assert result.answer == "fake response"
+    assert result.continuation is None
+
+    assert planner.questions == [
+        "Compare ORDER-100 and SHIP-003.",
+    ]
+
+    assert len(llm_provider.requests) == 1
+
+    prompt = llm_provider.requests[0].messages[-1].content
+
+    assert "Shipment 1:" in prompt
+    assert "Identifier: ORDER-100" in prompt
+    assert "Resolution status: ambiguous" in prompt
+    assert "The identifier matches multiple shipments." in prompt
+    assert "A tracking number or shipment UUID is required to identify the shipment." in prompt
+
+    assert "Shipment 2:" in prompt
+    assert "Identifier: SHIP-003" in prompt
+    assert "Resolution status: resolved" in prompt
+    assert f"Shipment id: {unique_shipment.id}" in prompt
+    assert "Tracking number: SHIP-003" in prompt
+
+
+@pytest.mark.asyncio
+async def test_langgraph_agent_runtime_multi_shipment_handles_all_missing() -> None:
+    tenant_id = uuid4()
+
+    uow = FakeUnitOfWork()
+
+    planner = FakeAgentPlanner()
+    planner.decision = AgentDecision(
+        route="get_shipments",
+        shipment_identifiers=(
+            "SHIP-MISSING-001",
+            "SHIP-MISSING-002",
+        ),
+    )
+
+    llm_provider = FakeLLMProvider()
+
+    summarize_shipment_service, _ = make_summarize_shipment_service()
+
+    runtime = make_runtime(
+        planner=planner,
+        uow=uow,
+        llm_provider=llm_provider,
+        summarize_shipment_service=summarize_shipment_service,
+    )
+
+    result = await runtime.execute(
+        tenant_id=tenant_id,
+        role_id=TEST_ROLE_ID,
+        question=("Compare SHIP-MISSING-001 and SHIP-MISSING-002."),
+    )
+
+    assert result == "fake response"
+
+    assert len(llm_provider.requests) == 1
+
+    prompt = llm_provider.requests[0].messages[-1].content
+
+    assert "Identifier: SHIP-MISSING-001" in prompt
+    assert "Identifier: SHIP-MISSING-002" in prompt
+
+    assert prompt.count("Resolution status: not_found") == 2
+
+    assert "Shipment id:" not in prompt
+
+
+@pytest.mark.asyncio
+async def test_langgraph_agent_runtime_passes_conversation_context_to_planner() -> None:
+    tenant_id = uuid4()
+
+    planner = FakeAgentPlanner()
+
+    llm_provider = FakeLLMProvider()
+
+    uow = FakeUnitOfWork()
+
+    summarize_shipment_service, _ = make_summarize_shipment_service()
+
+    runtime = make_runtime(
+        planner=planner,
+        uow=uow,
+        llm_provider=llm_provider,
+        summarize_shipment_service=summarize_shipment_service,
+    )
+
+    conversation_context = ConversationContext(
+        messages=(
+            ConversationMessage(
+                role="user",
+                content="Compare SHIP-001 and SHIP-002.",
+            ),
+            ConversationMessage(
+                role="assistant",
+                content="SHIP-001 appears more delayed.",
+            ),
+        )
+    )
+
+    await runtime.execute(
+        tenant_id=tenant_id,
+        role_id=TEST_ROLE_ID,
+        question="Which one is more delayed?",
+        conversation_context=conversation_context,
+    )
+
+    assert planner.questions == [
+        "Which one is more delayed?",
+    ]
+
+    assert planner.conversation_contexts == [
+        conversation_context,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_runtime_handles_contextual_multi_shipment_follow_up() -> None:
+    tenant_id = uuid4()
+
+    first_shipment = make_shipment(
+        tenant_id=tenant_id,
+    )
+    first_shipment.tracking_number = "SHIP-001"
+
+    second_shipment = make_shipment(
+        tenant_id=tenant_id,
+    )
+    second_shipment.tracking_number = "SHIP-002"
+
+    uow = FakeUnitOfWork()
+    uow.shipments.add(first_shipment)
+    uow.shipments.add(second_shipment)
+
+    planner = FakeAgentPlanner()
+    planner.decision = AgentDecision(
+        route="get_shipments",
+        shipment_identifiers=(
+            "SHIP-001",
+            "SHIP-002",
+        ),
+    )
+
+    llm_provider = FakeLLMProvider()
+
+    summarize_shipment_service, _ = make_summarize_shipment_service()
+
+    runtime = make_runtime(
+        planner=planner,
+        uow=uow,
+        llm_provider=llm_provider,
+        summarize_shipment_service=summarize_shipment_service,
+    )
+
+    conversation_context = ConversationContext(
+        messages=(
+            ConversationMessage(
+                role="user",
+                content="Compare SHIP-001 and SHIP-002.",
+            ),
+            ConversationMessage(
+                role="assistant",
+                content="SHIP-001 appears more delayed.",
+            ),
+        )
+    )
+
+    answer = await runtime.execute(
+        tenant_id=tenant_id,
+        role_id=TEST_ROLE_ID,
+        question="Which one is more delayed?",
+        conversation_context=conversation_context,
+    )
+
+    assert answer == "fake response"
+
+    assert planner.questions == [
+        "Which one is more delayed?",
+    ]
+
+    assert planner.conversation_contexts == [
+        conversation_context,
+    ]
+
+    assert len(llm_provider.requests) == 1
+
+    prompt = llm_provider.requests[0].messages[-1].content
+
+    assert "SHIP-001" in prompt
+    assert "SHIP-002" in prompt
+    assert str(first_shipment.id) in prompt
+    assert str(second_shipment.id) in prompt
+
+
+class FailingAgentPlanner:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def plan(
+        self,
+        *,
+        question: str,
+        conversation_context: ConversationContext | None = None,
+    ) -> AgentDecision:
+        del question
+        del conversation_context
+
+        self.calls += 1
+
+        raise AgentPlanningError("planner failed")
+
+
+@pytest.mark.asyncio
+async def test_runtime_falls_back_to_direct_answer_when_planner_fails() -> None:
+    tenant_id = uuid4()
+
+    planner = FailingAgentPlanner()
+
+    llm_provider = FakeLLMProvider()
+
+    uow = FakeUnitOfWork()
+
+    summarize_shipment_service, _ = make_summarize_shipment_service()
+
+    runtime = make_runtime(
+        planner=planner,
+        uow=uow,
+        llm_provider=llm_provider,
+        summarize_shipment_service=summarize_shipment_service,
+    )
+
+    answer = await runtime.execute(
+        tenant_id=tenant_id,
+        role_id=TEST_ROLE_ID,
+        question="What is a tracking number?",
+    )
+
+    assert answer == "fake response"
+
+    assert planner.calls == 2
+
+    assert len(llm_provider.requests) == 1
+
+    request = llm_provider.requests[0]
+
+    prompt = request.messages[-1].content
+
+    assert prompt == "What is a tracking number?"
+
+
+class RetryAgentPlanner:
+    def __init__(
+        self,
+        *,
+        decision: AgentDecision,
+    ) -> None:
+        self.decision = decision
+        self.calls = 0
+
+    async def plan(
+        self,
+        *,
+        question: str,
+        conversation_context: ConversationContext | None = None,
+    ) -> AgentDecision:
+        del question
+        del conversation_context
+
+        self.calls += 1
+
+        if self.calls == 1:
+            raise AgentPlanningError("first planner attempt failed")
+
+        return self.decision
+
+
+@pytest.mark.asyncio
+async def test_runtime_retries_planner_once_after_planning_error() -> None:
+    tenant_id = uuid4()
+
+    planner = RetryAgentPlanner(
+        decision=AgentDecision(
+            route="direct_answer",
+        ),
+    )
+
+    llm_provider = FakeLLMProvider()
+
+    uow = FakeUnitOfWork()
+
+    summarize_shipment_service, _ = make_summarize_shipment_service()
+
+    runtime = make_runtime(
+        planner=planner,
+        uow=uow,
+        llm_provider=llm_provider,
+        summarize_shipment_service=summarize_shipment_service,
+    )
+
+    answer = await runtime.execute(
+        tenant_id=tenant_id,
+        role_id=TEST_ROLE_ID,
+        question="What is a tracking number?",
+    )
+
+    assert answer == "fake response"
+
+    assert planner.calls == 2
+
+    assert len(llm_provider.requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_runtime_logs_planner_retry_without_prompt_content(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    tenant_id = uuid4()
+
+    planner = RetryAgentPlanner(
+        decision=AgentDecision(
+            route="direct_answer",
+        ),
+    )
+
+    llm_provider = FakeLLMProvider()
+    uow = FakeUnitOfWork()
+
+    summarize_shipment_service, _ = make_summarize_shipment_service()
+
+    runtime = make_runtime(
+        planner=planner,
+        uow=uow,
+        llm_provider=llm_provider,
+        summarize_shipment_service=summarize_shipment_service,
+    )
+
+    sensitive_question = "Sensitive shipment question"
+
+    with caplog.at_level(
+        "WARNING",
+        logger="novascale.ai",
+    ):
+        await runtime.execute(
+            tenant_id=tenant_id,
+            role_id=TEST_ROLE_ID,
+            question=sensitive_question,
+        )
+
+    record = next(
+        record
+        for record in caplog.records
+        if (
+            record.name == "novascale.ai"
+            and record.getMessage() == "AI agent planner attempt failed"
+        )
+    )
+
+    assert record.ai_operation == "agent_planning"
+    assert record.ai_outcome == "retry"
+    assert record.attempt == 1
+
+    assert sensitive_question not in record.getMessage()
+
+
+@pytest.mark.asyncio
+async def test_runtime_logs_planner_fallback_without_prompt_content(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    tenant_id = uuid4()
+
+    planner = FailingAgentPlanner()
+
+    llm_provider = FakeLLMProvider()
+    uow = FakeUnitOfWork()
+
+    summarize_shipment_service, _ = make_summarize_shipment_service()
+
+    runtime = make_runtime(
+        planner=planner,
+        uow=uow,
+        llm_provider=llm_provider,
+        summarize_shipment_service=summarize_shipment_service,
+    )
+
+    sensitive_question = "Sensitive shipment question"
+
+    with caplog.at_level(
+        "WARNING",
+        logger="novascale.ai",
+    ):
+        await runtime.execute(
+            tenant_id=tenant_id,
+            role_id=TEST_ROLE_ID,
+            question=sensitive_question,
+        )
+
+    record = next(
+        record
+        for record in caplog.records
+        if (
+            record.name == "novascale.ai"
+            and record.getMessage() == "AI agent planner fallback activated"
+        )
+    )
+
+    assert record.ai_operation == "agent_planning"
+    assert record.ai_outcome == "fallback"
+    assert record.attempts == 2
+
+    assert sensitive_question not in record.getMessage()

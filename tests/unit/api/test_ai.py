@@ -3,6 +3,11 @@ from uuid import UUID
 
 from fastapi.testclient import TestClient
 
+from app.ai.application.agent.conversation import AgentExecutionResult
+from app.ai.application.agent.conversation_context import (
+    ConversationContext,
+    ConversationMessage,
+)
 from app.ai.application.agent.shipment_operational_models import (
     ShipmentOperationalAnalysis,
     ShipmentOperationalIssue,
@@ -18,6 +23,7 @@ from app.ai.domain.rag_models import (
     RetrievedChunk,
 )
 from app.api.routes.ai import (
+    get_agent_runtime,
     get_analyze_shipment_service,
     get_answer_question_service,
     get_resolve_shipment_service,
@@ -63,6 +69,45 @@ class FakeCheckPermissionUseCase:
         query: object,
     ) -> None:
         return None
+
+
+class FakeAgentRuntime:
+    def __init__(self) -> None:
+        self.calls: list[
+            tuple[
+                UUID,
+                UUID,
+                str,
+                object | None,
+                ConversationContext | None,
+            ]
+        ] = []
+
+    async def execute_with_context(
+        self,
+        *,
+        tenant_id: UUID,
+        role_id: UUID,
+        question: str,
+        continuation: object | None = None,
+        conversation_context: ConversationContext | None = None,
+    ) -> AgentExecutionResult:
+        self.calls.append(
+            (
+                tenant_id,
+                role_id,
+                question,
+                continuation,
+                conversation_context,
+            )
+        )
+
+        return AgentExecutionResult(
+            answer="fake agent response",
+        )
+
+
+FAKE_AGENT_RUNTIME = FakeAgentRuntime()
 
 
 class FakeAnswerQuestionService(AnswerQuestionService):
@@ -156,6 +201,7 @@ def configure_dependency_overrides() -> None:
     app.dependency_overrides[get_answer_question_service] = lambda: FakeAnswerQuestionService()
     app.dependency_overrides[get_resolve_shipment_service] = lambda: FakeResolveShipmentService()
     app.dependency_overrides[get_analyze_shipment_service] = lambda: FakeAnalyzeShipmentService()
+    app.dependency_overrides[get_agent_runtime] = lambda: FAKE_AGENT_RUNTIME
 
 
 def test_ask_question_endpoint() -> None:
@@ -313,5 +359,201 @@ def test_shipment_operational_analysis_endpoint_returns_conflict_for_ambiguous_i
         assert response.json() == {
             "detail": "Shipment identifier matches multiple shipments",
         }
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_agent_endpoint_rejects_invalid_shipment_continuation_route() -> None:
+    configure_dependency_overrides()
+
+    try:
+        client = TestClient(app)
+
+        response = client.post(
+            f"/api/v1/ai/tenants/{TENANT_ID}/agent",
+            json={
+                "question": "SHIP-002",
+                "continuation": {
+                    "kind": "shipment_selection",
+                    "route": "retrieve_context",
+                    "original_identifier": "ORDER-100",
+                },
+            },
+        )
+
+        assert response.status_code == 422
+
+        response_body = response.json()
+
+        assert response_body["detail"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_agent_endpoint_passes_conversation_context_to_runtime() -> None:
+    configure_dependency_overrides()
+    FAKE_AGENT_RUNTIME.calls.clear()
+
+    try:
+        client = TestClient(app)
+
+        response = client.post(
+            f"/api/v1/ai/tenants/{TENANT_ID}/agent",
+            json={
+                "question": "Which one is more delayed?",
+                "conversation_context": {
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": "Compare SHIP-001 and SHIP-002.",
+                        },
+                        {
+                            "role": "assistant",
+                            "content": "SHIP-001 appears more delayed.",
+                        },
+                    ]
+                },
+            },
+        )
+
+        assert response.status_code == 200
+
+        assert response.json() == {
+            "answer": "fake agent response",
+            "continuation": None,
+        }
+
+        assert len(FAKE_AGENT_RUNTIME.calls) == 1
+
+        (
+            tenant_id,
+            role_id,
+            question,
+            continuation,
+            conversation_context,
+        ) = FAKE_AGENT_RUNTIME.calls[0]
+
+        assert tenant_id == TENANT_ID
+        assert role_id == UUID("22222222-2222-2222-2222-222222222222")
+        assert question == "Which one is more delayed?"
+        assert continuation is None
+
+        assert conversation_context == ConversationContext(
+            messages=(
+                ConversationMessage(
+                    role="user",
+                    content="Compare SHIP-001 and SHIP-002.",
+                ),
+                ConversationMessage(
+                    role="assistant",
+                    content="SHIP-001 appears more delayed.",
+                ),
+            )
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_agent_endpoint_rejects_too_many_conversation_messages() -> None:
+    configure_dependency_overrides()
+    FAKE_AGENT_RUNTIME.calls.clear()
+
+    try:
+        client = TestClient(app)
+
+        response = client.post(
+            f"/api/v1/ai/tenants/{TENANT_ID}/agent",
+            json={
+                "question": "Continue.",
+                "conversation_context": {
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": f"Message {index}",
+                        }
+                        for index in range(21)
+                    ]
+                },
+            },
+        )
+
+        assert response.status_code == 422
+        assert FAKE_AGENT_RUNTIME.calls == []
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_agent_endpoint_rejects_empty_question() -> None:
+    configure_dependency_overrides()
+    FAKE_AGENT_RUNTIME.calls.clear()
+
+    try:
+        client = TestClient(app)
+
+        response = client.post(
+            f"/api/v1/ai/tenants/{TENANT_ID}/agent",
+            json={
+                "question": "",
+            },
+        )
+
+        assert response.status_code == 422
+        assert FAKE_AGENT_RUNTIME.calls == []
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_agent_endpoint_rejects_invalid_conversation_role() -> None:
+    configure_dependency_overrides()
+    FAKE_AGENT_RUNTIME.calls.clear()
+
+    try:
+        client = TestClient(app)
+
+        response = client.post(
+            f"/api/v1/ai/tenants/{TENANT_ID}/agent",
+            json={
+                "question": "Continue.",
+                "conversation_context": {
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": "Invalid role.",
+                        }
+                    ]
+                },
+            },
+        )
+
+        assert response.status_code == 422
+        assert FAKE_AGENT_RUNTIME.calls == []
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_agent_endpoint_rejects_empty_conversation_message_content() -> None:
+    configure_dependency_overrides()
+    FAKE_AGENT_RUNTIME.calls.clear()
+
+    try:
+        client = TestClient(app)
+
+        response = client.post(
+            f"/api/v1/ai/tenants/{TENANT_ID}/agent",
+            json={
+                "question": "Continue.",
+                "conversation_context": {
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": "",
+                        }
+                    ]
+                },
+            },
+        )
+
+        assert response.status_code == 422
+        assert FAKE_AGENT_RUNTIME.calls == []
     finally:
         app.dependency_overrides.clear()

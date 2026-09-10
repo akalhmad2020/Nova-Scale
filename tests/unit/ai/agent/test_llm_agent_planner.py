@@ -1,5 +1,9 @@
 import pytest
 
+from app.ai.application.agent.conversation_context import (
+    ConversationContext,
+    ConversationMessage,
+)
 from app.ai.application.agent.decision import AgentDecision
 from app.ai.application.agent.exceptions import AgentPlanningError
 from app.ai.application.services.generate_text import GenerateTextService
@@ -237,3 +241,180 @@ async def test_llm_agent_planner_repairs_escaped_colon_before_null() -> None:
         route="direct_answer",
         shipment_identifier=None,
     )
+
+
+@pytest.mark.asyncio
+async def test_llm_agent_planner_selects_multiple_shipments() -> None:
+    planner, _ = make_planner(
+        '{"route":"get_shipments",'
+        '"shipment_identifier":null,'
+        '"shipment_identifiers":["SHIP-001","SHIP-002"]}'
+    )
+
+    decision = await planner.plan(
+        question="Compare SHIP-001 and SHIP-002.",
+    )
+
+    assert decision == AgentDecision(
+        route="get_shipments",
+        shipment_identifiers=(
+            "SHIP-001",
+            "SHIP-002",
+        ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_llm_agent_planner_preserves_multi_shipment_order() -> None:
+    planner, _ = make_planner(
+        '{"route":"get_shipments",'
+        '"shipment_identifier":null,'
+        '"shipment_identifiers":'
+        '["ORDER-300","SHIP-002","ORDER-100"]}'
+    )
+
+    decision = await planner.plan(
+        question=("Compare ORDER-300, SHIP-002 and ORDER-100."),
+    )
+
+    assert decision.shipment_identifiers == (
+        "ORDER-300",
+        "SHIP-002",
+        "ORDER-100",
+    )
+
+
+@pytest.mark.asyncio
+async def test_llm_agent_planner_rejects_single_identifier_for_multi_route() -> None:
+    planner, _ = make_planner(
+        '{"route":"get_shipments","shipment_identifier":null,"shipment_identifiers":["SHIP-001"]}'
+    )
+
+    with pytest.raises(
+        AgentPlanningError,
+        match="between 2 and 5",
+    ):
+        await planner.plan(
+            question="Compare SHIP-001.",
+        )
+
+
+@pytest.mark.asyncio
+async def test_llm_agent_planner_rejects_more_than_five_shipments() -> None:
+    planner, _ = make_planner(
+        '{"route":"get_shipments",'
+        '"shipment_identifier":null,'
+        '"shipment_identifiers":['
+        '"SHIP-001",'
+        '"SHIP-002",'
+        '"SHIP-003",'
+        '"SHIP-004",'
+        '"SHIP-005",'
+        '"SHIP-006"]}'
+    )
+
+    with pytest.raises(
+        AgentPlanningError,
+        match="between 2 and 5",
+    ):
+        await planner.plan(
+            question="Compare these six shipments.",
+        )
+
+
+@pytest.mark.asyncio
+async def test_llm_agent_planner_rejects_duplicate_multi_identifiers() -> None:
+    planner, _ = make_planner(
+        '{"route":"get_shipments",'
+        '"shipment_identifier":null,'
+        '"shipment_identifiers":["SHIP-001","SHIP-001"]}'
+    )
+
+    with pytest.raises(
+        AgentPlanningError,
+        match="must be unique",
+    ):
+        await planner.plan(
+            question="Compare SHIP-001 with SHIP-001.",
+        )
+
+
+@pytest.mark.asyncio
+async def test_llm_agent_planner_includes_conversation_context() -> None:
+    planner, provider = make_planner(
+        '{"route":"get_shipments",'
+        '"shipment_identifier":null,'
+        '"shipment_identifiers":["SHIP-001","SHIP-002"]}'
+    )
+
+    context = ConversationContext(
+        messages=(
+            ConversationMessage(
+                role="user",
+                content="Compare SHIP-001 and SHIP-002.",
+            ),
+            ConversationMessage(
+                role="assistant",
+                content="SHIP-001 appears more delayed.",
+            ),
+        )
+    )
+
+    await planner.plan(
+        question="Which one is more delayed?",
+        conversation_context=context,
+    )
+
+    request = provider.requests[0]
+
+    prompt = request.messages[-1].content
+
+    assert "Conversation history:" in prompt
+    assert "user: Compare SHIP-001 and SHIP-002." in prompt
+    assert "assistant: SHIP-001 appears more delayed." in prompt
+    assert "Current user message:" in prompt
+    assert "Which one is more delayed?" in prompt
+
+
+@pytest.mark.asyncio
+async def test_llm_agent_planner_resolves_contextual_multi_shipment_follow_up() -> None:
+    planner, provider = make_planner(
+        '{"route":"get_shipments",'
+        '"shipment_identifier":null,'
+        '"shipment_identifiers":["SHIP-001","SHIP-002"]}'
+    )
+
+    conversation_context = ConversationContext(
+        messages=(
+            ConversationMessage(
+                role="user",
+                content="Compare SHIP-001 and SHIP-002.",
+            ),
+            ConversationMessage(
+                role="assistant",
+                content=("SHIP-001 is more delayed than SHIP-002."),
+            ),
+        )
+    )
+
+    decision = await planner.plan(
+        question="Which one is more delayed?",
+        conversation_context=conversation_context,
+    )
+
+    assert decision == AgentDecision(
+        route="get_shipments",
+        shipment_identifiers=(
+            "SHIP-001",
+            "SHIP-002",
+        ),
+    )
+
+    assert len(provider.requests) == 1
+
+    prompt = provider.requests[0].messages[-1].content
+
+    assert "Conversation history:" in prompt
+    assert "Compare SHIP-001 and SHIP-002." in prompt
+    assert "SHIP-001 is more delayed than SHIP-002." in prompt
+    assert "Which one is more delayed?" in prompt

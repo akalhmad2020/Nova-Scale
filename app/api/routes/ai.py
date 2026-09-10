@@ -1,10 +1,19 @@
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.application.agent.conversation import (
+    AgentContinuation,
+    AgentContinuationKind,
+    ShipmentContinuationRoute,
+)
+from app.ai.application.agent.conversation_context import (
+    ConversationContext,
+    ConversationMessage,
+)
 from app.ai.application.agent.shipment_operational_models import (
     OperationalRiskLevel,
     OperationalSeverity,
@@ -68,15 +77,51 @@ class AskQuestionResponse(BaseModel):
     sources: list[RAGSourceResponse]
 
 
-class AgentRequest(BaseModel):
-    question: str = Field(
+class AgentContinuationRequest(BaseModel):
+    kind: AgentContinuationKind
+    route: ShipmentContinuationRoute
+    original_identifier: str = Field(
+        min_length=1,
+        max_length=500,
+    )
+
+
+class ConversationMessageRequest(BaseModel):
+    role: Literal[
+        "user",
+        "assistant",
+    ]
+    content: str = Field(
         min_length=1,
         max_length=4000,
     )
 
 
+class ConversationContextRequest(BaseModel):
+    messages: list[ConversationMessageRequest] = Field(
+        default_factory=list,
+        max_length=20,
+    )
+
+
+class AgentRequest(BaseModel):
+    question: str = Field(
+        min_length=1,
+        max_length=4000,
+    )
+    continuation: AgentContinuationRequest | None = None
+    conversation_context: ConversationContextRequest | None = None
+
+
+class AgentContinuationResponse(BaseModel):
+    kind: AgentContinuationKind
+    route: ShipmentContinuationRoute
+    original_identifier: str
+
+
 class AgentResponse(BaseModel):
     answer: str
+    continuation: AgentContinuationResponse | None = None
 
 
 class ShipmentOperationalIssueResponse(BaseModel):
@@ -151,11 +196,11 @@ async def ask_question(
     ],
     _membership: Annotated[
         Membership,
-        Depends(require_entitlement(Entitlements.AI_ASSISTANT)),
-    ],
-    _document_access: Annotated[
-        Membership,
-        Depends(require_permission(Permissions.DOCUMENT_READ)),
+        Depends(
+            require_entitlement(
+                Entitlements.AI_ASSISTANT,
+            )
+        ),
     ],
 ) -> AskQuestionResponse:
     answer = await service.execute(
@@ -191,26 +236,57 @@ async def run_agent(
         LangGraphAgentRuntime,
         Depends(get_agent_runtime),
     ],
-    _membership: Annotated[
+    membership: Annotated[
         Membership,
-        Depends(require_entitlement(Entitlements.AI_ASSISTANT)),
-    ],
-    _shipment_access: Annotated[
-        Membership,
-        Depends(require_permission(Permissions.SHIPMENT_READ)),
-    ],
-    _document_access: Annotated[
-        Membership,
-        Depends(require_permission(Permissions.DOCUMENT_READ)),
+        Depends(
+            require_entitlement(
+                Entitlements.AI_ASSISTANT,
+            )
+        ),
     ],
 ) -> AgentResponse:
-    answer = await runtime.execute(
+    continuation: AgentContinuation | None = None
+
+    if payload.continuation is not None:
+        continuation = AgentContinuation(
+            kind=payload.continuation.kind,
+            route=payload.continuation.route,
+            original_identifier=(payload.continuation.original_identifier),
+        )
+
+    conversation_context: ConversationContext | None = None
+
+    if payload.conversation_context is not None:
+        conversation_context = ConversationContext(
+            messages=tuple(
+                ConversationMessage(
+                    role=message.role,
+                    content=message.content,
+                )
+                for message in payload.conversation_context.messages
+            )
+        )
+
+    result = await runtime.execute_with_context(
         tenant_id=tenant_id,
+        role_id=membership.role_id,
         question=payload.question,
+        continuation=continuation,
+        conversation_context=conversation_context,
     )
 
+    response_continuation: AgentContinuationResponse | None = None
+
+    if result.continuation is not None:
+        response_continuation = AgentContinuationResponse(
+            kind=result.continuation.kind,
+            route=result.continuation.route,
+            original_identifier=(result.continuation.original_identifier),
+        )
+
     return AgentResponse(
-        answer=answer,
+        answer=result.answer,
+        continuation=response_continuation,
     )
 
 
@@ -231,15 +307,19 @@ async def analyze_shipment_operations(
     ],
     _membership: Annotated[
         Membership,
-        Depends(require_entitlement(Entitlements.AI_ASSISTANT)),
-    ],
-    _shipment_access: Annotated[
-        Membership,
-        Depends(require_permission(Permissions.SHIPMENT_READ)),
+        Depends(
+            require_entitlement(
+                Entitlements.AI_ASSISTANT,
+            )
+        ),
     ],
     _shipment_event_access: Annotated[
         Membership,
-        Depends(require_permission(Permissions.SHIPMENT_EVENT_READ)),
+        Depends(
+            require_permission(
+                Permissions.SHIPMENT_EVENT_READ,
+            )
+        ),
     ],
 ) -> ShipmentOperationalAnalysisResponse:
     try:
@@ -278,7 +358,12 @@ async def analyze_shipment_operations(
                 message=issue.message,
                 recommended_action=issue.recommended_action,
                 age_seconds=(
-                    max(0, int(issue.age.total_seconds())) if issue.age is not None else None
+                    max(
+                        0,
+                        int(issue.age.total_seconds()),
+                    )
+                    if issue.age is not None
+                    else None
                 ),
             )
             for issue in analysis.issues

@@ -1,7 +1,8 @@
-# tests/unit/ai/fakes.py
-
 from uuid import UUID
 
+from app.ai.application.agent.conversation_context import (
+    ConversationContext,
+)
 from app.ai.application.agent.decision import AgentDecision
 from app.ai.domain.models import LLMRequest, LLMResponse
 from app.ai.domain.rag_models import EmbeddedChunk, RetrievedChunk
@@ -98,7 +99,9 @@ class FakeVectorStore:
 class FakeAgentPlanner:
     def __init__(self) -> None:
         self.questions: list[str] = []
-        self.decision = AgentDecision(
+        self.conversation_contexts: list[ConversationContext | None] = []
+
+        self.decision: AgentDecision = AgentDecision(
             route="direct_answer",
         )
 
@@ -106,6 +109,14 @@ class FakeAgentPlanner:
         self,
         *,
         question: str,
+        conversation_context: ConversationContext | None = None,
     ) -> AgentDecision:
-        self.questions.append(question)
+        self.questions.append(
+            question,
+        )
+
+        self.conversation_contexts.append(
+            conversation_context,
+        )
+
         return self.decision

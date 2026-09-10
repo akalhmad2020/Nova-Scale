@@ -22,6 +22,7 @@ async def test_agent_runtime_direct_answer_with_real_llm(
 
     answer = await runtime.execute(
         tenant_id=uuid4(),
+        role_id=uuid4(),
         question=(
             "Briefly explain what a shipment tracking number is. "
             "Do not look up a specific shipment."
