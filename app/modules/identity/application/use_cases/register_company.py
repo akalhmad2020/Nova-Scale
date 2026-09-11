@@ -18,6 +18,8 @@ from app.modules.ledger.application.use_cases.bootstrap_accounts import (
 )
 from app.modules.ledger.domain.enums import LedgerAccountStatus
 from app.modules.ledger.infrastructure.models import LedgerAccount
+from app.modules.saas.application.exceptions import SelfServicePlanUnavailableError
+from app.modules.saas.domain.catalog import is_self_service_plan
 from app.modules.saas.domain.enums import PlanCode, SubscriptionStatus
 from app.modules.saas.infrastructure.models.subscription import TenantSubscription
 
@@ -30,6 +32,7 @@ class RegisterCompanyCommand:
     last_name: str
     company_name: str
     company_slug: str
+    plan_code: PlanCode = PlanCode.STARTER
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +63,9 @@ class RegisterCompany:
         email = command.email.strip().lower()
         company_name = command.company_name.strip()
         company_slug = command.company_slug.strip().lower()
+
+        if not is_self_service_plan(command.plan_code):
+            raise SelfServicePlanUnavailableError
 
         async with self._unit_of_work as uow:
             if await uow.users.email_exists(email):
@@ -104,8 +110,9 @@ class RegisterCompany:
 
             subscription = TenantSubscription(
                 tenant_id=tenant.id,
-                plan_code=PlanCode.STARTER,
+                plan_code=command.plan_code,
                 status=SubscriptionStatus.ACTIVE,
+                provider="portfolio",
             )
             uow.subscriptions.add(subscription)
 

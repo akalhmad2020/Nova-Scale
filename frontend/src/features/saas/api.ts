@@ -1,4 +1,5 @@
 import type {
+  ChangePlanInput,
   Plan,
   TenantSubscription,
 } from "@/features/saas/types";
@@ -24,6 +25,23 @@ export async function getCurrentSubscription(): Promise<TenantSubscription> {
   return readJsonResponse<TenantSubscription>(
     response,
     "Unable to load workspace subscription",
+  );
+}
+
+export async function changeSubscriptionPlan(
+  input: ChangePlanInput,
+): Promise<TenantSubscription> {
+  const response = await fetch("/api/subscription/plan", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(input),
+  });
+
+  return readJsonResponse<TenantSubscription>(
+    response,
+    "Unable to change workspace plan",
   );
 }
 

@@ -23,6 +23,7 @@ def list_plans() -> list[PlanResponse]:
                 description=plan.description,
                 display_order=plan.display_order,
                 recommended=plan.recommended,
+                self_service=plan.self_service,
                 entitlements=PlanEntitlementsResponse(
                     ai_assistant=entitlements.ai_assistant,
                     rag_indexing=entitlements.rag_indexing,

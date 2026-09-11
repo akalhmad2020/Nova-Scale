@@ -48,7 +48,7 @@ export function PlanAccessCard({
           </div>
 
           <Link
-            href="/billing#plans"
+            href="/subscription"
             className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
           >
             View plans

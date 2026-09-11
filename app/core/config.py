@@ -41,6 +41,8 @@ class Settings(BaseSettings):
 
     hsts_enabled: bool = False
 
+    billing_provider: Literal["portfolio", "stripe"] = "portfolio"
+
     database_url: str = (
         "postgresql+asyncpg://novascale_app:novascale_app_local_change_me@localhost:5432/novascale"
     )

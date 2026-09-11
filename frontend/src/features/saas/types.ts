@@ -22,6 +22,7 @@ export type Plan = {
   description: string;
   display_order: number;
   recommended: boolean;
+  self_service: boolean;
   entitlements: PlanEntitlements;
 };
 
@@ -35,4 +36,8 @@ export type TenantSubscription = {
   provider: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type ChangePlanInput = {
+  plan_code: PlanCode;
 };

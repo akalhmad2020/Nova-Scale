@@ -1,8 +1,13 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 
 import {
+  changeSubscriptionPlan,
   getCurrentSubscription,
   getPlans,
 } from "@/features/saas/api";
@@ -34,6 +39,30 @@ export function useCurrentSubscription() {
     queryFn: getCurrentSubscription,
     enabled: Boolean(activeTenantId),
     retry: false,
+  });
+}
+
+export function useChangeSubscriptionPlan() {
+  const queryClient = useQueryClient();
+  const activeTenantIdQuery = useActiveTenantId();
+  const activeTenantId = activeTenantIdQuery.data ?? null;
+
+  return useMutation({
+    mutationFn: changeSubscriptionPlan,
+    onSuccess: async (subscription) => {
+      queryClient.setQueryData(
+        ["saas", "subscription", subscription.tenant_id],
+        subscription,
+      );
+
+      await queryClient.invalidateQueries({
+        queryKey: ["saas", "subscription", activeTenantId],
+      });
+
+      await queryClient.invalidateQueries({
+        queryKey: ["ai"],
+      });
+    },
   });
 }
 

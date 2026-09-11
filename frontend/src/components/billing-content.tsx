@@ -3,7 +3,6 @@
 import Link from "next/link";
 
 import { CreateInvoiceForm } from "@/components/create-invoice-form";
-import { SubscriptionPlansPanel } from "@/components/subscription-plans-panel";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/components/ui/icon";
 import { PageHeader } from "@/components/ui/page-header";
@@ -29,7 +28,6 @@ export function BillingContent() {
         description="Prepare customer invoices, review totals, and control the invoice lifecycle from draft through issue and settlement."
       />
 
-      <SubscriptionPlansPanel />
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
         <Surface className="min-w-0 overflow-hidden">

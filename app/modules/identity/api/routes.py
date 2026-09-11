@@ -42,11 +42,17 @@ from app.modules.identity.application.use_cases.register_company import (
     RegisterCompanyCommand,
 )
 from app.modules.identity.infrastructure.models.user import User
+from app.modules.saas.application.exceptions import SelfServicePlanUnavailableError
+from app.modules.saas.domain.enums import PlanCode
 
 router = APIRouter(
     prefix="/auth",
     tags=["auth"],
 )
+
+
+class RegisterCompanyWithPlanRequest(RegisterCompanyRequest):
+    plan_code: PlanCode = PlanCode.STARTER
 
 
 @router.post(
@@ -55,7 +61,7 @@ router = APIRouter(
     status_code=status.HTTP_201_CREATED,
 )
 async def register_company(
-    request: RegisterCompanyRequest,
+    request: RegisterCompanyWithPlanRequest,
     use_case: Annotated[
         RegisterCompany,
         Depends(get_register_company_use_case),
@@ -70,6 +76,7 @@ async def register_company(
                 last_name=request.last_name,
                 company_name=request.company_name,
                 company_slug=request.company_slug,
+                plan_code=request.plan_code,
             )
         )
     except EmailAlreadyRegisteredError as exc:
@@ -81,6 +88,11 @@ async def register_company(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Tenant slug already exists",
+        ) from exc
+    except SelfServicePlanUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="This plan is not available for self-service signup",
         ) from exc
 
     return RegisterCompanyResponse(
