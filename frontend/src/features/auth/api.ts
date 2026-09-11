@@ -1,5 +1,7 @@
 import type {
   LoginCredentials,
+  RegisterCompanyInput,
+  RegisterCompanyResponse,
   User,
 } from "@/features/auth/types";
 
@@ -21,12 +23,30 @@ export async function login(
   const data = await response.json();
 
   if (!response.ok) {
-    throw new Error(
-      data?.detail ?? "Login failed",
-    );
+    throw new Error(data?.detail ?? "Login failed");
   }
 
   return data as LoginResponse;
+}
+
+export async function registerCompany(
+  input: RegisterCompanyInput,
+): Promise<RegisterCompanyResponse> {
+  const response = await fetch("/api/auth/register", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(input),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data?.detail ?? "Unable to create workspace");
+  }
+
+  return data as RegisterCompanyResponse;
 }
 
 export async function getCurrentUser(): Promise<User> {
@@ -38,9 +58,7 @@ export async function getCurrentUser(): Promise<User> {
   const data = await response.json();
 
   if (!response.ok) {
-    throw new Error(
-      data?.detail ?? "Unable to load current user",
-    );
+    throw new Error(data?.detail ?? "Unable to load current user");
   }
 
   return data as User;

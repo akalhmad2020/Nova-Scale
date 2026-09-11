@@ -1,122 +1,81 @@
 "use client";
 
 import { CreateLocationForm } from "@/components/create-location-form";
+import { EmptyState } from "@/components/ui/empty-state";
+import { PageHeader } from "@/components/ui/page-header";
+import { StatusBadge, formatStatus } from "@/components/ui/status-badge";
+import { Surface, SurfaceHeader } from "@/components/ui/surface";
 import { useLocations } from "@/features/locations/hooks";
 
 export function LocationsContent() {
   const locationsQuery = useLocations();
+  const locations = locationsQuery.data ?? [];
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-zinc-950">
-          Locations
-        </h1>
+    <div className="space-y-7">
+      <PageHeader
+        eyebrow="Network"
+        title="Locations"
+        description="Manage warehouses, offices, pickup points, and delivery facilities used by shipment operations."
+      />
 
-        <p className="mt-1 text-sm text-zinc-600">
-          Manage locations for the active tenant.
-        </p>
-      </div>
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_25rem]">
+        <Surface className="min-w-0 overflow-hidden">
+          <SurfaceHeader
+            title="Location network"
+            description="Facilities available to the active workspace"
+            meta={`${locations.length} location${locations.length === 1 ? "" : "s"}`}
+          />
 
-      <div className="rounded-xl border border-zinc-200 bg-white p-5">
-        <div className="mb-5">
-          <h2 className="font-medium text-zinc-950">
-            Create location
-          </h2>
-
-          <p className="mt-1 text-sm text-zinc-500">
-            Add a warehouse, office, pickup,
-            delivery, or other location.
-          </p>
-        </div>
-
-        <CreateLocationForm />
-      </div>
-
-      <div className="rounded-xl border border-zinc-200 bg-white">
-        <div className="border-b border-zinc-200 px-5 py-4">
-          <h2 className="font-medium text-zinc-950">
-            Location list
-          </h2>
-        </div>
-
-        {locationsQuery.isPending && (
-          <div className="p-5 text-sm text-zinc-600">
-            Loading locations...
-          </div>
-        )}
-
-        {locationsQuery.isError && (
-          <div className="p-5 text-sm text-red-600">
-            {locationsQuery.error.message}
-          </div>
-        )}
-
-        {locationsQuery.data?.length === 0 && (
-          <div className="p-10 text-center">
-            <p className="font-medium text-zinc-900">
-              No locations yet
-            </p>
-          </div>
-        )}
-
-        {locationsQuery.data &&
-          locationsQuery.data.length > 0 && (
+          {locationsQuery.isPending ? (
+            <div className="p-6 text-sm text-slate-500">Loading locations...</div>
+          ) : locationsQuery.isError ? (
+            <div className="p-6 text-sm text-rose-600">{locationsQuery.error.message}</div>
+          ) : locations.length === 0 ? (
+            <EmptyState
+              icon="locations"
+              title="No locations yet"
+              description="Add at least two operational locations before creating shipment routes."
+            />
+          ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="border-b border-zinc-200 bg-zinc-50">
+              <table className="w-full min-w-[760px] text-left text-sm">
+                <thead className="bg-slate-50/80 text-xs uppercase tracking-wide text-slate-500">
                   <tr>
-                    <th className="px-5 py-3 font-medium text-zinc-600">
-                      Name
-                    </th>
-                    <th className="px-5 py-3 font-medium text-zinc-600">
-                      Code
-                    </th>
-                    <th className="px-5 py-3 font-medium text-zinc-600">
-                      Type
-                    </th>
-                    <th className="px-5 py-3 font-medium text-zinc-600">
-                      City
-                    </th>
-                    <th className="px-5 py-3 font-medium text-zinc-600">
-                      Status
-                    </th>
+                    <th className="px-6 py-3 font-semibold">Location</th>
+                    <th className="px-5 py-3 font-semibold">Type</th>
+                    <th className="px-5 py-3 font-semibold">City</th>
+                    <th className="px-5 py-3 font-semibold">Code</th>
+                    <th className="px-5 py-3 font-semibold">Status</th>
                   </tr>
                 </thead>
-
-                <tbody>
-                  {locationsQuery.data.map(
-                    (location) => (
-                      <tr
-                        key={location.id}
-                        className="border-b border-zinc-100 last:border-b-0"
-                      >
-                        <td className="px-5 py-4 font-medium text-zinc-950">
-                          {location.name}
-                        </td>
-
-                        <td className="px-5 py-4 text-zinc-700">
-                          {location.code}
-                        </td>
-
-                        <td className="px-5 py-4 text-zinc-700">
-                          {location.type}
-                        </td>
-
-                        <td className="px-5 py-4 text-zinc-700">
-                          {location.city}
-                        </td>
-
-                        <td className="px-5 py-4 text-zinc-700">
-                          {location.status}
-                        </td>
-                      </tr>
-                    ),
-                  )}
+                <tbody className="divide-y divide-slate-100">
+                  {locations.map((location) => (
+                    <tr key={location.id} className="transition hover:bg-slate-50/70">
+                      <td className="px-6 py-4">
+                        <p className="font-semibold text-slate-950">{location.name}</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {location.address_line1}{location.address_line2 ? `, ${location.address_line2}` : ""}
+                        </p>
+                      </td>
+                      <td className="px-5 py-4 text-slate-600">{formatStatus(location.type)}</td>
+                      <td className="px-5 py-4 text-slate-600">
+                        {location.city}, {location.country_code}
+                      </td>
+                      <td className="px-5 py-4 font-mono text-xs text-slate-600">{location.code}</td>
+                      <td className="px-5 py-4"><StatusBadge value={location.status} /></td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
           )}
+        </Surface>
+
+        <Surface className="h-fit">
+          <SurfaceHeader title="Add location" description="Expand the operating network" />
+          <div className="max-h-[70vh] overflow-y-auto p-5 sm:p-6"><CreateLocationForm /></div>
+        </Surface>
       </div>
     </div>
   );

@@ -6,6 +6,22 @@ from pydantic import BaseModel, ConfigDict
 from app.modules.saas.domain.enums import PlanCode, SubscriptionStatus
 
 
+class PlanEntitlementsResponse(BaseModel):
+    ai_assistant: bool
+    rag_indexing: bool
+    outbound_webhooks: bool
+    team_member_limit: int | None
+
+
+class PlanResponse(BaseModel):
+    code: PlanCode
+    name: str
+    description: str
+    display_order: int
+    recommended: bool
+    entitlements: PlanEntitlementsResponse
+
+
 class SubscriptionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -63,7 +63,7 @@ export function CreateCustomerForm() {
         <div>
           <label
             htmlFor="customer-name"
-            className="mb-2 block text-sm font-medium text-zinc-900"
+            className="mb-2 block text-sm font-medium text-slate-900"
           >
             Name
           </label>
@@ -72,11 +72,11 @@ export function CreateCustomerForm() {
             id="customer-name"
             type="text"
             {...register("name")}
-            className="w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-950 outline-none focus:border-zinc-950"
+            className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-950 outline-none focus:border-cyan-600"
           />
 
           {errors.name && (
-            <p className="mt-2 text-sm text-red-600">
+            <p className="mt-2 text-sm text-rose-600">
               {errors.name.message}
             </p>
           )}
@@ -85,7 +85,7 @@ export function CreateCustomerForm() {
         <div>
           <label
             htmlFor="customer-code"
-            className="mb-2 block text-sm font-medium text-zinc-900"
+            className="mb-2 block text-sm font-medium text-slate-900"
           >
             Code
           </label>
@@ -94,11 +94,11 @@ export function CreateCustomerForm() {
             id="customer-code"
             type="text"
             {...register("code")}
-            className="w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-950 outline-none focus:border-zinc-950"
+            className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-950 outline-none focus:border-cyan-600"
           />
 
           {errors.code && (
-            <p className="mt-2 text-sm text-red-600">
+            <p className="mt-2 text-sm text-rose-600">
               {errors.code.message}
             </p>
           )}
@@ -109,7 +109,7 @@ export function CreateCustomerForm() {
         <div>
           <label
             htmlFor="customer-email"
-            className="mb-2 block text-sm font-medium text-zinc-900"
+            className="mb-2 block text-sm font-medium text-slate-900"
           >
             Email
           </label>
@@ -118,11 +118,11 @@ export function CreateCustomerForm() {
             id="customer-email"
             type="email"
             {...register("email")}
-            className="w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-950 outline-none focus:border-zinc-950"
+            className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-950 outline-none focus:border-cyan-600"
           />
 
           {errors.email && (
-            <p className="mt-2 text-sm text-red-600">
+            <p className="mt-2 text-sm text-rose-600">
               {errors.email.message}
             </p>
           )}
@@ -131,7 +131,7 @@ export function CreateCustomerForm() {
         <div>
           <label
             htmlFor="customer-phone"
-            className="mb-2 block text-sm font-medium text-zinc-900"
+            className="mb-2 block text-sm font-medium text-slate-900"
           >
             Phone
           </label>
@@ -140,7 +140,7 @@ export function CreateCustomerForm() {
             id="customer-phone"
             type="text"
             {...register("phone")}
-            className="w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-950 outline-none focus:border-zinc-950"
+            className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-950 outline-none focus:border-cyan-600"
           />
         </div>
       </div>
@@ -148,7 +148,7 @@ export function CreateCustomerForm() {
       <div>
         <label
           htmlFor="customer-notes"
-          className="mb-2 block text-sm font-medium text-zinc-900"
+          className="mb-2 block text-sm font-medium text-slate-900"
         >
           Notes
         </label>
@@ -157,12 +157,12 @@ export function CreateCustomerForm() {
           id="customer-notes"
           rows={3}
           {...register("notes")}
-          className="w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-950 outline-none focus:border-zinc-950"
+          className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-950 outline-none focus:border-cyan-600"
         />
       </div>
 
       {createCustomerMutation.isError && (
-        <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {createCustomerMutation.error instanceof
           Error
             ? createCustomerMutation.error.message
@@ -175,7 +175,7 @@ export function CreateCustomerForm() {
         disabled={
           createCustomerMutation.isPending
         }
-        className="rounded-lg bg-zinc-950 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+        className="rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {createCustomerMutation.isPending
           ? "Creating..."

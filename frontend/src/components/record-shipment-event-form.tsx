@@ -111,7 +111,7 @@ export function RecordShipmentEventForm({
       <div>
         <label
           htmlFor="shipment-event-type"
-          className="block text-sm font-medium text-zinc-700"
+          className="block text-sm font-medium text-slate-700"
         >
           Event type
         </label>
@@ -135,7 +135,7 @@ export function RecordShipmentEventForm({
               setLocationId("");
             }
           }}
-          className="mt-2 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+          className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950"
         >
           {MANUAL_EVENT_TYPES.map(
             (eventTypeOption) => (
@@ -160,7 +160,7 @@ export function RecordShipmentEventForm({
         <div>
           <label
             htmlFor="shipment-event-location"
-            className="block text-sm font-medium text-zinc-700"
+            className="block text-sm font-medium text-slate-700"
           >
             Location
             {locationRequired
@@ -169,13 +169,13 @@ export function RecordShipmentEventForm({
           </label>
 
           {locationsQuery.isPending && (
-            <p className="mt-2 text-sm text-zinc-500">
+            <p className="mt-2 text-sm text-slate-500">
               Loading locations...
             </p>
           )}
 
           {locationsQuery.isError && (
-            <div className="mt-2 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div className="mt-2 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">
               {
                 locationsQuery.error
                   .message
@@ -195,7 +195,7 @@ export function RecordShipmentEventForm({
               required={
                 locationRequired
               }
-              className="mt-2 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+              className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950"
             >
               <option value="">
                 {locationRequired
@@ -222,7 +222,7 @@ export function RecordShipmentEventForm({
           {locationsQuery.isSuccess &&
             activeLocations.length ===
               0 && (
-              <p className="mt-2 text-sm text-zinc-500">
+              <p className="mt-2 text-sm text-slate-500">
                 No active locations
                 available.
               </p>
@@ -233,7 +233,7 @@ export function RecordShipmentEventForm({
       <div>
         <label
           htmlFor="shipment-event-description"
-          className="block text-sm font-medium text-zinc-700"
+          className="block text-sm font-medium text-slate-700"
         >
           Description
         </label>
@@ -249,12 +249,12 @@ export function RecordShipmentEventForm({
           rows={3}
           maxLength={2000}
           placeholder="Add event details..."
-          className="mt-2 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+          className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950"
         />
       </div>
 
       {mutation.isError && (
-        <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {mutation.error instanceof
           Error
             ? mutation.error.message
@@ -263,7 +263,7 @@ export function RecordShipmentEventForm({
       )}
 
       {mutation.isSuccess && (
-        <div className="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700">
+        <div className="rounded-xl bg-green-50 px-4 py-3 text-sm text-green-700">
           Shipment event recorded.
         </div>
       )}
@@ -277,7 +277,7 @@ export function RecordShipmentEventForm({
           (locationRequired &&
             !locationId)
         }
-        className="rounded-lg bg-zinc-950 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+        className="rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {mutation.isPending
           ? "Recording..."

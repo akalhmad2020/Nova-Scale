@@ -6,6 +6,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 
+import type { RecordShipmentEventInput } from "@/features/shipments/events-types";
 import {
   createShipment,
   getShipment,
@@ -18,36 +19,24 @@ import {
 import type { TransitionShipmentStatusInput } from "@/features/shipments/types";
 import { useActiveTenantId } from "@/features/tenants/active-hooks";
 
-import type {
-  RecordShipmentEventInput,
-} from "@/features/shipments/events-types";
-
 export function useShipments() {
-  const activeTenantIdQuery =
-    useActiveTenantId();
+  const activeTenantIdQuery = useActiveTenantId();
+  const activeTenantId = readyTenantId(activeTenantIdQuery);
 
   return useQuery({
-    queryKey: [
-      "shipments",
-      activeTenantIdQuery.data,
-    ],
+    queryKey: ["shipments", activeTenantId],
     queryFn: getShipments,
-    enabled: Boolean(
-      activeTenantIdQuery.data,
-    ),
+    enabled: Boolean(activeTenantId),
     retry: false,
   });
 }
 
 export function useCreateShipment() {
   const queryClient = useQueryClient();
-
-  const activeTenantIdQuery =
-    useActiveTenantId();
+  const activeTenantIdQuery = useActiveTenantId();
 
   return useMutation({
     mutationFn: createShipment,
-
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: [
@@ -59,24 +48,18 @@ export function useCreateShipment() {
   });
 }
 
-export function useShipment(
-  shipmentId: string,
-) {
-  const activeTenantIdQuery =
-    useActiveTenantId();
+export function useShipment(shipmentId: string) {
+  const activeTenantIdQuery = useActiveTenantId();
+  const activeTenantId = readyTenantId(activeTenantIdQuery);
 
   return useQuery({
     queryKey: [
       "shipments",
-      activeTenantIdQuery.data,
+      activeTenantId,
       shipmentId,
     ],
-    queryFn: () =>
-      getShipment(shipmentId),
-    enabled: Boolean(
-      activeTenantIdQuery.data &&
-        shipmentId,
-    ),
+    queryFn: () => getShipment(shipmentId),
+    enabled: Boolean(activeTenantId && shipmentId),
     retry: false,
   });
 }
@@ -84,23 +67,18 @@ export function useShipment(
 export function useShipmentOperationalAnalysis(
   shipmentId: string,
 ) {
-  const activeTenantIdQuery =
-    useActiveTenantId();
+  const activeTenantIdQuery = useActiveTenantId();
+  const activeTenantId = readyTenantId(activeTenantIdQuery);
 
   return useQuery({
     queryKey: [
       "shipment-intelligence",
-      activeTenantIdQuery.data,
+      activeTenantId,
       shipmentId,
     ],
     queryFn: () =>
-      getShipmentOperationalAnalysis(
-        shipmentId,
-      ),
-    enabled: Boolean(
-      activeTenantIdQuery.data &&
-        shipmentId,
-    ),
+      getShipmentOperationalAnalysis(shipmentId),
+    enabled: Boolean(activeTenantId && shipmentId),
     retry: false,
   });
 }
@@ -108,21 +86,17 @@ export function useShipmentOperationalAnalysis(
 export function useShipmentEvents(
   shipmentId: string,
 ) {
-  const activeTenantIdQuery =
-    useActiveTenantId();
+  const activeTenantIdQuery = useActiveTenantId();
+  const activeTenantId = readyTenantId(activeTenantIdQuery);
 
   return useQuery({
     queryKey: [
       "shipment-events",
-      activeTenantIdQuery.data,
+      activeTenantId,
       shipmentId,
     ],
-    queryFn: () =>
-      getShipmentEvents(shipmentId),
-    enabled: Boolean(
-      activeTenantIdQuery.data &&
-        shipmentId,
-    ),
+    queryFn: () => getShipmentEvents(shipmentId),
+    enabled: Boolean(activeTenantId && shipmentId),
     retry: false,
   });
 }
@@ -131,48 +105,33 @@ export function useTransitionShipmentStatus(
   shipmentId: string,
 ) {
   const queryClient = useQueryClient();
-
-  const activeTenantIdQuery =
-    useActiveTenantId();
+  const activeTenantIdQuery = useActiveTenantId();
 
   return useMutation({
     mutationFn: (
       input: TransitionShipmentStatusInput,
-    ) =>
-      transitionShipmentStatus(
-        shipmentId,
-        input,
-      ),
-
+    ) => transitionShipmentStatus(shipmentId, input),
     onSuccess: async () => {
+      const tenantId = activeTenantIdQuery.data;
+
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: [
-            "shipments",
-            activeTenantIdQuery.data,
-            shipmentId,
-          ],
+          queryKey: ["shipments", tenantId, shipmentId],
         }),
-
         queryClient.invalidateQueries({
-          queryKey: [
-            "shipments",
-            activeTenantIdQuery.data,
-          ],
+          queryKey: ["shipments", tenantId],
         }),
-
         queryClient.invalidateQueries({
           queryKey: [
             "shipment-events",
-            activeTenantIdQuery.data,
+            tenantId,
             shipmentId,
           ],
         }),
-
         queryClient.invalidateQueries({
           queryKey: [
             "shipment-intelligence",
-            activeTenantIdQuery.data,
+            tenantId,
             shipmentId,
           ],
         }),
@@ -185,37 +144,40 @@ export function useRecordShipmentEvent(
   shipmentId: string,
 ) {
   const queryClient = useQueryClient();
-
-  const activeTenantIdQuery =
-    useActiveTenantId();
+  const activeTenantIdQuery = useActiveTenantId();
 
   return useMutation({
-    mutationFn: (
-      input: RecordShipmentEventInput,
-    ) =>
-      recordShipmentEvent(
-        shipmentId,
-        input,
-      ),
-
+    mutationFn: (input: RecordShipmentEventInput) =>
+      recordShipmentEvent(shipmentId, input),
     onSuccess: async () => {
+      const tenantId = activeTenantIdQuery.data;
+
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: [
             "shipment-events",
-            activeTenantIdQuery.data,
+            tenantId,
             shipmentId,
           ],
         }),
-
         queryClient.invalidateQueries({
           queryKey: [
             "shipment-intelligence",
-            activeTenantIdQuery.data,
+            tenantId,
             shipmentId,
           ],
         }),
       ]);
     },
   });
+}
+
+function readyTenantId(
+  query: ReturnType<typeof useActiveTenantId>,
+): string | null {
+  if (!query.isSuccess || query.isFetching || !query.data) {
+    return null;
+  }
+
+  return query.data;
 }
