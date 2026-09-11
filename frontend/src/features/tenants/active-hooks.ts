@@ -11,11 +11,17 @@ import {
   setActiveTenant,
 } from "@/features/tenants/active-api";
 
+export const ACTIVE_TENANT_QUERY_KEY = [
+  "tenants",
+  "active",
+] as const;
+
 export function useActiveTenantId() {
   return useQuery({
-    queryKey: ["tenants", "active"],
+    queryKey: ACTIVE_TENANT_QUERY_KEY,
     queryFn: getActiveTenantId,
     retry: false,
+    refetchOnMount: "always",
   });
 }
 
@@ -24,11 +30,32 @@ export function useSetActiveTenant() {
 
   return useMutation({
     mutationFn: setActiveTenant,
-    onSuccess: async (activeTenantId) => {
+    onSuccess: (activeTenantId) => {
       queryClient.setQueryData(
-        ["tenants", "active"],
+        ACTIVE_TENANT_QUERY_KEY,
         activeTenantId,
       );
+
+      removeTenantScopedQueries(queryClient);
     },
   });
+}
+
+function removeTenantScopedQueries(
+  queryClient: ReturnType<typeof useQueryClient>,
+): void {
+  for (const queryKey of [
+    ["shipments"],
+    ["shipment-events"],
+    ["shipment-intelligence"],
+    ["customers"],
+    ["locations"],
+    ["invoices"],
+    ["invoice"],
+    ["invoice-lines"],
+    ["ai"],
+    ["saas", "subscription"],
+  ] as const) {
+    queryClient.removeQueries({ queryKey });
+  }
 }

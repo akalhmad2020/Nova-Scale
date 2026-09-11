@@ -14,7 +14,6 @@ import {
   removeInvoiceLine,
   voidInvoice,
 } from "@/features/billing/api";
-
 import type {
   AddInvoiceLineInput,
   CreateInvoiceInput,
@@ -23,41 +22,30 @@ import type {
 import { useActiveTenantId } from "@/features/tenants/active-hooks";
 
 export function useInvoices() {
-  const activeTenantId = useActiveTenantId();
+  const activeTenantIdQuery = useActiveTenantId();
+  const activeTenantId = readyTenantId(activeTenantIdQuery);
 
   return useQuery({
-    queryKey: [
-      "invoices",
-      activeTenantId,
-    ],
+    queryKey: ["invoices", activeTenantId],
     queryFn: getInvoices,
     enabled: Boolean(activeTenantId),
   });
 }
 
-export function useInvoice(
-  invoiceId: string,
-) {
-  const activeTenantId = useActiveTenantId();
+export function useInvoice(invoiceId: string) {
+  const activeTenantIdQuery = useActiveTenantId();
+  const activeTenantId = readyTenantId(activeTenantIdQuery);
 
   return useQuery({
-    queryKey: [
-      "invoice",
-      activeTenantId,
-      invoiceId,
-    ],
-    queryFn: () =>
-      getInvoice(invoiceId),
-    enabled:
-      Boolean(activeTenantId) &&
-      Boolean(invoiceId),
+    queryKey: ["invoice", activeTenantId, invoiceId],
+    queryFn: () => getInvoice(invoiceId),
+    enabled: Boolean(activeTenantId && invoiceId),
   });
 }
 
-export function useInvoiceLines(
-  invoiceId: string,
-) {
-  const activeTenantId = useActiveTenantId();
+export function useInvoiceLines(invoiceId: string) {
+  const activeTenantIdQuery = useActiveTenantId();
+  const activeTenantId = readyTenantId(activeTenantIdQuery);
 
   return useQuery({
     queryKey: [
@@ -65,28 +53,23 @@ export function useInvoiceLines(
       activeTenantId,
       invoiceId,
     ],
-    queryFn: () =>
-      getInvoiceLines(invoiceId),
-    enabled:
-      Boolean(activeTenantId) &&
-      Boolean(invoiceId),
+    queryFn: () => getInvoiceLines(invoiceId),
+    enabled: Boolean(activeTenantId && invoiceId),
   });
 }
 
 export function useCreateInvoice() {
   const queryClient = useQueryClient();
-  const activeTenantId = useActiveTenantId();
+  const activeTenantIdQuery = useActiveTenantId();
 
   return useMutation({
-    mutationFn: (
-      input: CreateInvoiceInput,
-    ) => createInvoice(input),
-
+    mutationFn: (input: CreateInvoiceInput) =>
+      createInvoice(input),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: [
           "invoices",
-          activeTenantId,
+          activeTenantIdQuery.data,
         ],
       });
     },
@@ -97,54 +80,29 @@ export function useAddInvoiceLine(
   invoiceId: string,
 ) {
   const queryClient = useQueryClient();
-  const activeTenantId = useActiveTenantId();
+  const activeTenantIdQuery = useActiveTenantId();
 
   return useMutation({
-    mutationFn: (
-      input: AddInvoiceLineInput,
-    ) =>
-      addInvoiceLine(
-        invoiceId,
-        input,
-      ),
+    mutationFn: (input: AddInvoiceLineInput) =>
+      addInvoiceLine(invoiceId, input),
+    onSuccess: async (newInvoiceLine) => {
+      const tenantId = activeTenantIdQuery.data;
 
-    onSuccess: async (
-      newInvoiceLine,
-    ) => {
       queryClient.setQueryData<InvoiceLine[]>(
-        [
-          "invoice-lines",
-          activeTenantId,
-          invoiceId,
-        ],
-        (currentLines) => {
-          if (!currentLines) {
-            return [
-              newInvoiceLine,
-            ];
-          }
-
-          return [
-            ...currentLines,
-            newInvoiceLine,
-          ];
-        },
+        ["invoice-lines", tenantId, invoiceId],
+        (currentLines) =>
+          currentLines
+            ? [...currentLines, newInvoiceLine]
+            : [newInvoiceLine],
       );
 
       await queryClient.invalidateQueries({
-        queryKey: [
-          "invoices",
-          activeTenantId,
-        ],
+        queryKey: ["invoices", tenantId],
         refetchType: "none",
       });
 
       await queryClient.refetchQueries({
-        queryKey: [
-          "invoice",
-          activeTenantId,
-          invoiceId,
-        ],
+        queryKey: ["invoice", tenantId, invoiceId],
         exact: true,
       });
     },
@@ -155,53 +113,29 @@ export function useRemoveInvoiceLine(
   invoiceId: string,
 ) {
   const queryClient = useQueryClient();
-  const activeTenantId = useActiveTenantId();
+  const activeTenantIdQuery = useActiveTenantId();
 
   return useMutation({
-    mutationFn: (
-      invoiceLineId: string,
-    ) =>
-      removeInvoiceLine(
-        invoiceId,
-        invoiceLineId,
-      ),
+    mutationFn: (invoiceLineId: string) =>
+      removeInvoiceLine(invoiceId, invoiceLineId),
+    onSuccess: async (_data, invoiceLineId) => {
+      const tenantId = activeTenantIdQuery.data;
 
-    onSuccess: async (
-      _data,
-      invoiceLineId,
-    ) => {
       queryClient.setQueryData<InvoiceLine[]>(
-        [
-          "invoice-lines",
-          activeTenantId,
-          invoiceId,
-        ],
-        (currentLines) => {
-          if (!currentLines) {
-            return currentLines;
-          }
-
-          return currentLines.filter(
-            (line) =>
-              line.id !== invoiceLineId,
-          );
-        },
+        ["invoice-lines", tenantId, invoiceId],
+        (currentLines) =>
+          currentLines?.filter(
+            (line) => line.id !== invoiceLineId,
+          ),
       );
 
       await queryClient.invalidateQueries({
-        queryKey: [
-          "invoices",
-          activeTenantId,
-        ],
+        queryKey: ["invoices", tenantId],
         refetchType: "none",
       });
 
       await queryClient.refetchQueries({
-        queryKey: [
-          "invoice",
-          activeTenantId,
-          invoiceId,
-        ],
+        queryKey: ["invoice", tenantId, invoiceId],
         exact: true,
       });
     },
@@ -212,27 +146,20 @@ export function useIssueInvoice(
   invoiceId: string,
 ) {
   const queryClient = useQueryClient();
-  const activeTenantId = useActiveTenantId();
+  const activeTenantIdQuery = useActiveTenantId();
 
   return useMutation({
-    mutationFn: () =>
-      issueInvoice(invoiceId),
-
+    mutationFn: () => issueInvoice(invoiceId),
     onSuccess: async (invoice) => {
+      const tenantId = activeTenantIdQuery.data;
+
       queryClient.setQueryData(
-        [
-          "invoice",
-          activeTenantId,
-          invoiceId,
-        ],
+        ["invoice", tenantId, invoiceId],
         invoice,
       );
 
       await queryClient.invalidateQueries({
-        queryKey: [
-          "invoices",
-          activeTenantId,
-        ],
+        queryKey: ["invoices", tenantId],
         refetchType: "none",
       });
     },
@@ -243,29 +170,32 @@ export function useVoidInvoice(
   invoiceId: string,
 ) {
   const queryClient = useQueryClient();
-  const activeTenantId = useActiveTenantId();
+  const activeTenantIdQuery = useActiveTenantId();
 
   return useMutation({
-    mutationFn: () =>
-      voidInvoice(invoiceId),
-
+    mutationFn: () => voidInvoice(invoiceId),
     onSuccess: async (invoice) => {
+      const tenantId = activeTenantIdQuery.data;
+
       queryClient.setQueryData(
-        [
-          "invoice",
-          activeTenantId,
-          invoiceId,
-        ],
+        ["invoice", tenantId, invoiceId],
         invoice,
       );
 
       await queryClient.invalidateQueries({
-        queryKey: [
-          "invoices",
-          activeTenantId,
-        ],
+        queryKey: ["invoices", tenantId],
         refetchType: "none",
       });
     },
   });
+}
+
+function readyTenantId(
+  query: ReturnType<typeof useActiveTenantId>,
+): string | null {
+  if (!query.isSuccess || query.isFetching || !query.data) {
+    return null;
+  }
+
+  return query.data;
 }

@@ -13,31 +13,23 @@ import {
 import { useActiveTenantId } from "@/features/tenants/active-hooks";
 
 export function useCustomers() {
-  const activeTenantIdQuery =
-    useActiveTenantId();
+  const activeTenantIdQuery = useActiveTenantId();
+  const activeTenantId = readyTenantId(activeTenantIdQuery);
 
   return useQuery({
-    queryKey: [
-      "customers",
-      activeTenantIdQuery.data,
-    ],
+    queryKey: ["customers", activeTenantId],
     queryFn: getCustomers,
-    enabled: Boolean(
-      activeTenantIdQuery.data,
-    ),
+    enabled: Boolean(activeTenantId),
     retry: false,
   });
 }
 
 export function useCreateCustomer() {
   const queryClient = useQueryClient();
-
-  const activeTenantIdQuery =
-    useActiveTenantId();
+  const activeTenantIdQuery = useActiveTenantId();
 
   return useMutation({
     mutationFn: createCustomer,
-
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: [
@@ -47,4 +39,14 @@ export function useCreateCustomer() {
       });
     },
   });
+}
+
+function readyTenantId(
+  query: ReturnType<typeof useActiveTenantId>,
+): string | null {
+  if (!query.isSuccess || query.isFetching || !query.data) {
+    return null;
+  }
+
+  return query.data;
 }

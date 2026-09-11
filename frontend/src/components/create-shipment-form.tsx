@@ -84,7 +84,7 @@ export function CreateShipmentForm() {
     locationsQuery.isPending
   ) {
     return (
-      <p className="text-sm text-zinc-600">
+      <p className="text-sm text-slate-600">
         Loading shipment form...
       </p>
     );
@@ -95,7 +95,7 @@ export function CreateShipmentForm() {
     locationsQuery.isError
   ) {
     return (
-      <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+      <div className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">
         Unable to load customers or locations.
       </div>
     );
@@ -117,7 +117,7 @@ export function CreateShipmentForm() {
       className="space-y-5"
     >
       {!canCreateShipment && (
-        <div className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <div className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
           You need at least one customer
           and two locations before creating
           a shipment.
@@ -127,7 +127,7 @@ export function CreateShipmentForm() {
       <div>
         <label
           htmlFor="shipment-customer"
-          className="mb-2 block text-sm font-medium text-zinc-900"
+          className="mb-2 block text-sm font-medium text-slate-900"
         >
           Customer
         </label>
@@ -135,7 +135,7 @@ export function CreateShipmentForm() {
         <select
           id="shipment-customer"
           {...register("customer_id")}
-          className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-zinc-950 outline-none focus:border-zinc-950"
+          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-slate-950 outline-none focus:border-cyan-600"
         >
           <option value="">
             Select customer
@@ -152,7 +152,7 @@ export function CreateShipmentForm() {
         </select>
 
         {errors.customer_id && (
-          <p className="mt-2 text-sm text-red-600">
+          <p className="mt-2 text-sm text-rose-600">
             {errors.customer_id.message}
           </p>
         )}
@@ -162,7 +162,7 @@ export function CreateShipmentForm() {
         <div>
           <label
             htmlFor="shipment-origin"
-            className="mb-2 block text-sm font-medium text-zinc-900"
+            className="mb-2 block text-sm font-medium text-slate-900"
           >
             Origin
           </label>
@@ -172,7 +172,7 @@ export function CreateShipmentForm() {
             {...register(
               "origin_location_id",
             )}
-            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-zinc-950 outline-none focus:border-zinc-950"
+            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-slate-950 outline-none focus:border-cyan-600"
           >
             <option value="">
               Select origin
@@ -189,7 +189,7 @@ export function CreateShipmentForm() {
           </select>
 
           {errors.origin_location_id && (
-            <p className="mt-2 text-sm text-red-600">
+            <p className="mt-2 text-sm text-rose-600">
               {
                 errors.origin_location_id
                   .message
@@ -201,7 +201,7 @@ export function CreateShipmentForm() {
         <div>
           <label
             htmlFor="shipment-destination"
-            className="mb-2 block text-sm font-medium text-zinc-900"
+            className="mb-2 block text-sm font-medium text-slate-900"
           >
             Destination
           </label>
@@ -211,7 +211,7 @@ export function CreateShipmentForm() {
             {...register(
               "destination_location_id",
             )}
-            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-zinc-950 outline-none focus:border-zinc-950"
+            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-slate-950 outline-none focus:border-cyan-600"
           >
             <option value="">
               Select destination
@@ -228,7 +228,7 @@ export function CreateShipmentForm() {
           </select>
 
           {errors.destination_location_id && (
-            <p className="mt-2 text-sm text-red-600">
+            <p className="mt-2 text-sm text-rose-600">
               {
                 errors.destination_location_id
                   .message
@@ -241,7 +241,7 @@ export function CreateShipmentForm() {
       <div>
         <label
           htmlFor="tracking-number"
-          className="mb-2 block text-sm font-medium text-zinc-900"
+          className="mb-2 block text-sm font-medium text-slate-900"
         >
           Tracking number
         </label>
@@ -250,11 +250,11 @@ export function CreateShipmentForm() {
           id="tracking-number"
           type="text"
           {...register("tracking_number")}
-          className="w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-950 outline-none focus:border-zinc-950"
+          className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-950 outline-none focus:border-cyan-600"
         />
 
         {errors.tracking_number && (
-          <p className="mt-2 text-sm text-red-600">
+          <p className="mt-2 text-sm text-rose-600">
             {errors.tracking_number.message}
           </p>
         )}
@@ -264,7 +264,7 @@ export function CreateShipmentForm() {
         <div>
           <label
             htmlFor="shipment-service"
-            className="mb-2 block text-sm font-medium text-zinc-900"
+            className="mb-2 block text-sm font-medium text-slate-900"
           >
             Service type
           </label>
@@ -272,7 +272,7 @@ export function CreateShipmentForm() {
           <select
             id="shipment-service"
             {...register("service_type")}
-            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-zinc-950 outline-none focus:border-zinc-950"
+            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-slate-950 outline-none focus:border-cyan-600"
           >
             <option value="standard">
               Standard
@@ -287,7 +287,7 @@ export function CreateShipmentForm() {
         <div>
           <label
             htmlFor="shipment-reference"
-            className="mb-2 block text-sm font-medium text-zinc-900"
+            className="mb-2 block text-sm font-medium text-slate-900"
           >
             Reference
           </label>
@@ -296,7 +296,7 @@ export function CreateShipmentForm() {
             id="shipment-reference"
             type="text"
             {...register("reference")}
-            className="w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-950 outline-none focus:border-zinc-950"
+            className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-950 outline-none focus:border-cyan-600"
           />
         </div>
       </div>
@@ -305,7 +305,7 @@ export function CreateShipmentForm() {
         <div>
           <label
             htmlFor="shipment-weight"
-            className="mb-2 block text-sm font-medium text-zinc-900"
+            className="mb-2 block text-sm font-medium text-slate-900"
           >
             Weight
           </label>
@@ -316,11 +316,11 @@ export function CreateShipmentForm() {
             min="0"
             step="any"
             {...register("weight")}
-            className="w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-950 outline-none focus:border-zinc-950"
+            className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-950 outline-none focus:border-cyan-600"
           />
 
           {errors.weight && (
-            <p className="mt-2 text-sm text-red-600">
+            <p className="mt-2 text-sm text-rose-600">
               {errors.weight.message}
             </p>
           )}
@@ -329,7 +329,7 @@ export function CreateShipmentForm() {
         <div>
           <label
             htmlFor="shipment-weight-unit"
-            className="mb-2 block text-sm font-medium text-zinc-900"
+            className="mb-2 block text-sm font-medium text-slate-900"
           >
             Weight unit
           </label>
@@ -337,7 +337,7 @@ export function CreateShipmentForm() {
           <select
             id="shipment-weight-unit"
             {...register("weight_unit")}
-            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-zinc-950 outline-none focus:border-zinc-950"
+            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-slate-950 outline-none focus:border-cyan-600"
           >
             <option value="kg">
               KG
@@ -353,7 +353,7 @@ export function CreateShipmentForm() {
       <div>
         <label
           htmlFor="shipment-description"
-          className="mb-2 block text-sm font-medium text-zinc-900"
+          className="mb-2 block text-sm font-medium text-slate-900"
         >
           Description
         </label>
@@ -362,14 +362,14 @@ export function CreateShipmentForm() {
           id="shipment-description"
           rows={3}
           {...register("description")}
-          className="w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-950 outline-none focus:border-zinc-950"
+          className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-950 outline-none focus:border-cyan-600"
         />
       </div>
 
       <div>
         <label
           htmlFor="shipment-notes"
-          className="mb-2 block text-sm font-medium text-zinc-900"
+          className="mb-2 block text-sm font-medium text-slate-900"
         >
           Notes
         </label>
@@ -378,12 +378,12 @@ export function CreateShipmentForm() {
           id="shipment-notes"
           rows={3}
           {...register("notes")}
-          className="w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-950 outline-none focus:border-zinc-950"
+          className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-950 outline-none focus:border-cyan-600"
         />
       </div>
 
       {createShipmentMutation.isError && (
-        <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {createShipmentMutation.error instanceof
           Error
             ? createShipmentMutation.error
@@ -398,7 +398,7 @@ export function CreateShipmentForm() {
           createShipmentMutation.isPending ||
           !canCreateShipment
         }
-        className="rounded-lg bg-zinc-950 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+        className="rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {createShipmentMutation.isPending
           ? "Creating..."

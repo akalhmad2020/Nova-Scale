@@ -3,209 +3,113 @@
 import Link from "next/link";
 
 import { CreateInvoiceForm } from "@/components/create-invoice-form";
+import { SubscriptionPlansPanel } from "@/components/subscription-plans-panel";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Icon } from "@/components/ui/icon";
+import { PageHeader } from "@/components/ui/page-header";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { Surface, SurfaceHeader } from "@/components/ui/surface";
 import { useInvoices } from "@/features/billing/hooks";
 import { useCustomers } from "@/features/customers/hooks";
 
 export function BillingContent() {
   const invoicesQuery = useInvoices();
   const customersQuery = useCustomers();
+  const invoices = invoicesQuery.data ?? [];
 
   const customersById = new Map(
-    (customersQuery.data ?? []).map(
-      (customer) => [
-        customer.id,
-        customer,
-      ],
-    ),
+    (customersQuery.data ?? []).map((customer) => [customer.id, customer]),
   );
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-zinc-950">
-          Billing
-        </h1>
+    <div className="space-y-7">
+      <PageHeader
+        eyebrow="Finance"
+        title="Billing"
+        description="Prepare customer invoices, review totals, and control the invoice lifecycle from draft through issue and settlement."
+      />
 
-        <p className="mt-1 text-sm text-zinc-600">
-          Manage invoices for the active tenant.
-        </p>
-      </div>
+      <SubscriptionPlansPanel />
 
-      <div className="rounded-xl border border-zinc-200 bg-white p-5">
-        <div className="mb-5">
-          <h2 className="font-medium text-zinc-950">
-            Create invoice
-          </h2>
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
+        <Surface className="min-w-0 overflow-hidden">
+          <SurfaceHeader
+            title="Invoice register"
+            description="Invoices for the active workspace"
+            meta={`${invoices.length} invoice${invoices.length === 1 ? "" : "s"}`}
+          />
 
-          <p className="mt-1 text-sm text-zinc-500">
-            Create a draft invoice for a customer.
-          </p>
-        </div>
-
-        <CreateInvoiceForm />
-      </div>
-
-      <div className="rounded-xl border border-zinc-200 bg-white">
-        <div className="border-b border-zinc-200 px-5 py-4">
-          <h2 className="font-medium text-zinc-950">
-            Invoice list
-          </h2>
-        </div>
-
-        {invoicesQuery.isPending && (
-          <div className="p-5 text-sm text-zinc-600">
-            Loading invoices...
-          </div>
-        )}
-
-        {invoicesQuery.isError && (
-          <div className="p-5 text-sm text-red-600">
-            {invoicesQuery.error.message}
-          </div>
-        )}
-
-        {invoicesQuery.data?.length ===
-          0 && (
-          <div className="p-10 text-center">
-            <p className="font-medium text-zinc-900">
-              No invoices yet
-            </p>
-          </div>
-        )}
-
-        {invoicesQuery.data &&
-          invoicesQuery.data.length > 0 && (
+          {invoicesQuery.isPending ? (
+            <div className="p-6 text-sm text-slate-500">Loading invoices...</div>
+          ) : invoicesQuery.isError ? (
+            <div className="p-6 text-sm text-rose-600">{invoicesQuery.error.message}</div>
+          ) : invoices.length === 0 ? (
+            <EmptyState
+              icon="billing"
+              title="No invoices yet"
+              description="Create a draft invoice for a customer to begin the billing workflow."
+            />
+          ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="border-b border-zinc-200 bg-zinc-50">
+              <table className="w-full min-w-[760px] text-left text-sm">
+                <thead className="bg-slate-50/80 text-xs uppercase tracking-wide text-slate-500">
                   <tr>
-                    <th className="px-5 py-3 font-medium text-zinc-600">
-                      Invoice
-                    </th>
-
-                    <th className="px-5 py-3 font-medium text-zinc-600">
-                      Customer
-                    </th>
-
-                    <th className="px-5 py-3 font-medium text-zinc-600">
-                      Status
-                    </th>
-
-                    <th className="px-5 py-3 font-medium text-zinc-600">
-                      Total
-                    </th>
-
-                    <th className="px-5 py-3 font-medium text-zinc-600">
-                      Created
-                    </th>
+                    <th className="px-6 py-3 font-semibold">Invoice</th>
+                    <th className="px-5 py-3 font-semibold">Customer</th>
+                    <th className="px-5 py-3 font-semibold">Status</th>
+                    <th className="px-5 py-3 font-semibold">Total</th>
+                    <th className="px-5 py-3 font-semibold">Created</th>
+                    <th className="px-5 py-3" />
                   </tr>
                 </thead>
-
-                <tbody>
-                  {invoicesQuery.data.map(
-                    (invoice) => {
-                      const customer =
-                        customersById.get(
-                          invoice.customer_id,
-                        );
-
-                      return (
-                        <tr
-                          key={invoice.id}
-                          className="border-b border-zinc-100 last:border-b-0"
-                        >
-                          <td className="px-5 py-4 font-medium text-zinc-950">
-                            <Link
-                              href={`/billing/${invoice.id}`}
-                              className="hover:underline"
-                            >
-                              {
-                                invoice.invoice_number
-                              }
-                            </Link>
-                          </td>
-
-                          <td className="px-5 py-4 text-zinc-700">
-                            {customer
-                              ? customer.name
-                              : invoice.customer_id}
-                          </td>
-
-                          <td className="px-5 py-4 text-zinc-700">
-                            {formatStatus(
-                              invoice.status,
-                            )}
-                          </td>
-
-                          <td className="px-5 py-4 text-zinc-700">
-                            {formatMoney(
-                              invoice.total_amount,
-                              invoice.currency,
-                            )}
-                          </td>
-
-                          <td className="px-5 py-4 text-zinc-700">
-                            {formatDate(
-                              invoice.created_at,
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    },
-                  )}
+                <tbody className="divide-y divide-slate-100">
+                  {invoices.map((invoice) => {
+                    const customer = customersById.get(invoice.customer_id);
+                    return (
+                      <tr key={invoice.id} className="transition hover:bg-slate-50/70">
+                        <td className="px-6 py-4">
+                          <Link href={`/billing/${invoice.id}`} className="font-semibold text-slate-950 transition hover:text-cyan-700">
+                            {invoice.invoice_number}
+                          </Link>
+                          <p className="mt-1 text-xs text-slate-500">{invoice.currency}</p>
+                        </td>
+                        <td className="px-5 py-4 text-slate-600">{customer?.name ?? invoice.customer_id}</td>
+                        <td className="px-5 py-4"><StatusBadge value={invoice.status} /></td>
+                        <td className="px-5 py-4 font-semibold tabular-nums text-slate-900">{formatMoney(invoice.total_amount, invoice.currency)}</td>
+                        <td className="px-5 py-4 text-slate-600">{formatDate(invoice.created_at)}</td>
+                        <td className="px-5 py-4 text-right">
+                          <Link href={`/billing/${invoice.id}`} aria-label={`Open ${invoice.invoice_number}`} className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-900">
+                            <Icon name="arrow-right" className="h-4 w-4" />
+                          </Link>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           )}
+        </Surface>
+
+        <Surface className="h-fit">
+          <SurfaceHeader title="Create invoice" description="Open a new draft invoice" />
+          <div className="p-5 sm:p-6"><CreateInvoiceForm /></div>
+        </Surface>
       </div>
     </div>
   );
 }
 
-function formatStatus(
-  value: string,
-): string {
-  return value
-    .split("_")
-    .map(
-      (part) =>
-        part.charAt(0).toUpperCase() +
-        part.slice(1),
-    )
-    .join(" ");
-}
-
-function formatMoney(
-  value: string,
-  currency: string,
-): string {
+function formatMoney(value: string, currency: string) {
   const amount = Number(value);
-
-  if (!Number.isFinite(amount)) {
-    return `${value} ${currency}`;
-  }
-
+  if (!Number.isFinite(amount)) return `${value} ${currency}`;
   try {
-    return new Intl.NumberFormat(
-      undefined,
-      {
-        style: "currency",
-        currency,
-      },
-    ).format(amount);
+    return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(amount);
   } catch {
     return `${value} ${currency}`;
   }
 }
 
-function formatDate(
-  value: string,
-): string {
-  return new Intl.DateTimeFormat(
-    undefined,
-    {
-      dateStyle: "medium",
-      timeStyle: "short",
-    },
-  ).format(new Date(value));
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value));
 }

@@ -1,17 +1,29 @@
 "use client";
 
+import Link from "next/link";
+
+import { PlanAccessCard } from "@/components/plan-access-card";
+import { RecordShipmentEventForm } from "@/components/record-shipment-event-form";
 import { ShipmentIntelligencePanel } from "@/components/shipment-intelligence-panel";
 import { ShipmentTimeline } from "@/components/shipment-timeline";
-import { RecordShipmentEventForm } from "@/components/record-shipment-event-form";
+import { Icon } from "@/components/ui/icon";
+import { StatusBadge, formatStatus } from "@/components/ui/status-badge";
+import { Surface, SurfaceHeader } from "@/components/ui/surface";
 import {
   useShipment,
   useShipmentEvents,
   useShipmentOperationalAnalysis,
   useTransitionShipmentStatus,
 } from "@/features/shipments/hooks";
-import type {
-  ShipmentStatus,
-} from "@/features/shipments/types";
+import {
+  hasAIAssistantAccess,
+  resolveCurrentPlan,
+} from "@/features/saas/access";
+import {
+  useCurrentSubscription,
+  usePlans,
+} from "@/features/saas/hooks";
+import type { ShipmentStatus } from "@/features/shipments/types";
 
 type ShipmentDetailsContentProps = {
   shipmentId: string;
@@ -20,352 +32,278 @@ type ShipmentDetailsContentProps = {
 export function ShipmentDetailsContent({
   shipmentId,
 }: ShipmentDetailsContentProps) {
-  const shipmentQuery =
-    useShipment(shipmentId);
-
-  const shipmentEventsQuery =
-    useShipmentEvents(shipmentId);
-
-  const shipmentIntelligenceQuery =
-    useShipmentOperationalAnalysis(
-      shipmentId,
-    );
-
-  const transitionMutation =
-    useTransitionShipmentStatus(
-      shipmentId,
-    );
+  const shipmentQuery = useShipment(shipmentId);
+  const shipmentEventsQuery = useShipmentEvents(shipmentId);
+  const transitionMutation = useTransitionShipmentStatus(shipmentId);
 
   if (shipmentQuery.isPending) {
     return (
-      <p className="text-sm text-zinc-600">
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">
         Loading shipment...
-      </p>
+      </div>
     );
   }
 
   if (shipmentQuery.isError) {
     return (
-      <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+      <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5 text-sm text-rose-700">
         {shipmentQuery.error.message}
       </div>
     );
   }
 
   const shipment = shipmentQuery.data;
-
-  const nextStatus =
-    getNextShipmentStatus(
-      shipment.status,
-    );
+  const nextStatus = getNextShipmentStatus(shipment.status);
 
   async function handleTransition() {
-    if (!nextStatus) {
-      return;
-    }
-
-    await transitionMutation.mutateAsync({
-      status: nextStatus,
-    });
+    if (!nextStatus) return;
+    await transitionMutation.mutateAsync({ status: nextStatus });
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-7">
       <div>
-        <p className="text-sm text-zinc-500">
-          Shipment
-        </p>
+        <Link
+          href="/shipments"
+          className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 transition hover:text-slate-950"
+        >
+          <span aria-hidden>←</span>
+          Shipments
+        </Link>
 
-        <h1 className="mt-1 text-2xl font-semibold text-zinc-950">
-          {shipment.tracking_number}
-        </h1>
-      </div>
-
-      <div className="rounded-xl border border-zinc-200 bg-white p-5">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-sm text-zinc-500">
-              Current status
-            </p>
-
-            <p className="mt-1 text-lg font-medium text-zinc-950">
-              {formatValue(
-                shipment.status,
-              )}
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">
+                {shipment.tracking_number}
+              </h1>
+              <StatusBadge value={shipment.status} />
+            </div>
+            <p className="mt-2 text-sm text-slate-500">
+              {shipment.reference ? `Reference ${shipment.reference}` : "No external reference"}
+              <span className="mx-2 text-slate-300">•</span>
+              Created {formatDateTime(shipment.created_at)}
             </p>
           </div>
 
-          {nextStatus && (
+          {nextStatus ? (
             <button
               type="button"
-              onClick={
-                handleTransition
-              }
-              disabled={
-                transitionMutation.isPending
-              }
-              className="rounded-lg bg-zinc-950 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={() => void handleTransition()}
+              disabled={transitionMutation.isPending}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
+              <Icon name="arrow-right" className="h-4 w-4" />
               {transitionMutation.isPending
-                ? "Updating..."
-                : `Move to ${formatValue(
-                    nextStatus,
-                  )}`}
+                ? "Updating status..."
+                : `Move to ${formatStatus(nextStatus)}`}
             </button>
-          )}
+          ) : null}
         </div>
 
-        {transitionMutation.isError && (
-          <div className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
-            {transitionMutation.error instanceof
-            Error
-              ? transitionMutation.error
-                  .message
+        {transitionMutation.isError ? (
+          <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {transitionMutation.error instanceof Error
+              ? transitionMutation.error.message
               : "Unable to update shipment status"}
           </div>
-        )}
-
-        {!nextStatus &&
-          shipment.status ===
-            "delivered" && (
-            <p className="mt-4 text-sm text-zinc-500">
-              This shipment has been
-              delivered.
-            </p>
-          )}
-
-        {!nextStatus &&
-          shipment.status ===
-            "cancelled" && (
-            <p className="mt-4 text-sm text-zinc-500">
-              This shipment has been
-              cancelled.
-            </p>
-          )}
+        ) : null}
       </div>
 
-      <div>
-        {shipmentIntelligenceQuery.isPending && (
-          <div className="rounded-xl border border-zinc-200 bg-white p-5">
-            <p className="text-sm text-zinc-500">
-              Loading shipment intelligence...
-            </p>
-          </div>
-        )}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Detail label="Service" value={formatStatus(shipment.service_type)} />
+        <Detail label="Weight" value={`${shipment.weight} ${shipment.weight_unit.toUpperCase()}`} />
+        <Detail label="Reference" value={shipment.reference ?? "—"} />
+        <Detail label="Last updated" value={formatDateTime(shipment.updated_at)} />
+      </div>
 
-        {shipmentIntelligenceQuery.isError && (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {shipmentIntelligenceQuery.error.message}
-          </div>
-        )}
+      <ShipmentIntelligenceAccess shipmentId={shipmentId} />
 
-        {shipmentIntelligenceQuery.isSuccess && (
-          <ShipmentIntelligencePanel
-            analysis={
-              shipmentIntelligenceQuery.data
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(20rem,0.75fr)]">
+        <Surface>
+          <SurfaceHeader
+            title="Shipment timeline"
+            description="Chronological operational activity"
+            meta={
+              shipmentEventsQuery.data
+                ? `${shipmentEventsQuery.data.length} event${shipmentEventsQuery.data.length === 1 ? "" : "s"}`
+                : undefined
             }
           />
-        )}
-      </div>
+          <div className="p-5 sm:p-6">
+            {shipmentEventsQuery.isPending ? (
+              <p className="text-sm text-slate-500">Loading shipment events...</p>
+            ) : shipmentEventsQuery.isError ? (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+                {shipmentEventsQuery.error.message}
+              </div>
+            ) : (
+              <ShipmentTimeline events={shipmentEventsQuery.data} />
+            )}
+          </div>
+        </Surface>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <Detail
-          label="Service"
-          value={formatValue(
-            shipment.service_type,
-          )}
-        />
-
-        <Detail
-          label="Weight"
-          value={`${shipment.weight} ${shipment.weight_unit.toUpperCase()}`}
-        />
-
-        <Detail
-          label="Reference"
-          value={
-            shipment.reference ?? "—"
-          }
-        />
-
-        <Detail
-          label="Description"
-          value={
-            shipment.description ?? "—"
-          }
-        />
-
-        <Detail
-          label="Notes"
-          value={shipment.notes ?? "—"}
-        />
-
-        <Detail
-          label="Created"
-          value={formatDateTime(
-            shipment.created_at,
-          )}
-        />
-      </div>
-
-      <div className="rounded-xl border border-zinc-200 bg-white p-5">
-  <h2 className="font-medium text-zinc-950">
-    Record shipment event
-  </h2>
-
-  <p className="mt-1 text-sm text-zinc-500">
-    Add an operational event to this shipment.
-  </p>
-
-  <div className="mt-5">
-    <RecordShipmentEventForm
-      shipmentId={shipmentId}
-    />
-  </div>
-</div>
-
-      <div className="rounded-xl border border-zinc-200 bg-white p-5">
-        <h2 className="font-medium text-zinc-950">
-          Shipment timeline
-        </h2>
-
-        <div className="mt-5">
-          {shipmentEventsQuery.isPending && (
-            <p className="text-sm text-zinc-500">
-              Loading shipment events...
-            </p>
-          )}
-
-          {shipmentEventsQuery.isError && (
-            <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
-              {shipmentEventsQuery.error.message}
+        <div className="space-y-6">
+          <Surface>
+            <SurfaceHeader title="Record event" description="Add timeline activity" />
+            <div className="p-5 sm:p-6">
+              <RecordShipmentEventForm shipmentId={shipmentId} />
             </div>
-          )}
+          </Surface>
 
-          {shipmentEventsQuery.isSuccess && (
-            <ShipmentTimeline
-              events={
-                shipmentEventsQuery.data
-              }
-            />
-          )}
+          <Surface>
+            <SurfaceHeader title="Shipment details" description="Operational metadata" />
+            <dl className="divide-y divide-slate-100 px-5 sm:px-6">
+              <DetailRow label="Description" value={shipment.description ?? "—"} />
+              <DetailRow label="Notes" value={shipment.notes ?? "—"} />
+              <DetailRow label="Shipment ID" value={shipment.id} mono />
+              <DetailRow label="Customer ID" value={shipment.customer_id} mono />
+              <DetailRow label="Origin location" value={shipment.origin_location_id} mono />
+              <DetailRow label="Destination location" value={shipment.destination_location_id} mono />
+            </dl>
+          </Surface>
         </div>
       </div>
-
-      <div className="rounded-xl border border-zinc-200 bg-white p-5">
-        <h2 className="font-medium text-zinc-950">
-          Shipment identifiers
-        </h2>
-
-        <dl className="mt-4 space-y-3 text-sm">
-          <Identifier
-            label="Shipment ID"
-            value={shipment.id}
-          />
-
-          <Identifier
-            label="Customer ID"
-            value={shipment.customer_id}
-          />
-
-          <Identifier
-            label="Origin location ID"
-            value={
-              shipment.origin_location_id
-            }
-          />
-
-          <Identifier
-            label="Destination location ID"
-            value={
-              shipment.destination_location_id
-            }
-          />
-        </dl>
-      </div>
     </div>
   );
 }
 
-type DetailProps = {
+function ShipmentIntelligenceAccess({
+  shipmentId,
+}: {
+  shipmentId: string;
+}) {
+  const plansQuery = usePlans();
+  const subscriptionQuery = useCurrentSubscription();
+
+  if (plansQuery.isPending || subscriptionQuery.isPending) {
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">
+        Checking operational intelligence access...
+      </div>
+    );
+  }
+
+  if (plansQuery.isError || subscriptionQuery.isError) {
+    return (
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-800">
+        Unable to verify operational intelligence access for this workspace.
+      </div>
+    );
+  }
+
+  const currentPlan = resolveCurrentPlan(
+    plansQuery.data,
+    subscriptionQuery.data,
+  );
+
+  if (!currentPlan) {
+    return null;
+  }
+
+  if (!currentPlan.entitlements.ai_assistant) {
+    return (
+      <PlanAccessCard
+        eyebrow="Plan upgrade"
+        currentPlanName={currentPlan.name}
+        title="Operational intelligence is available on Professional"
+        description="Upgrade the workspace to unlock shipment risk analysis and AI-assisted operational context."
+        compact
+      />
+    );
+  }
+
+  if (
+    !hasAIAssistantAccess(
+      currentPlan,
+      subscriptionQuery.data,
+    )
+  ) {
+    return (
+      <PlanAccessCard
+        eyebrow="Subscription status"
+        currentPlanName={currentPlan.name}
+        title="Operational intelligence is currently paused"
+        description={`This workspace plan includes operational intelligence, but the subscription is ${subscriptionQuery.data.status.replaceAll("_", " ")}.`}
+        compact
+      />
+    );
+  }
+
+  return <ShipmentIntelligenceData shipmentId={shipmentId} />;
+}
+
+function ShipmentIntelligenceData({
+  shipmentId,
+}: {
+  shipmentId: string;
+}) {
+  const query = useShipmentOperationalAnalysis(shipmentId);
+
+  if (query.isPending) {
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">
+        Loading operational intelligence...
+      </div>
+    );
+  }
+
+  if (query.isError) {
+    return (
+      <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5 text-sm text-rose-700">
+        {query.error.message}
+      </div>
+    );
+  }
+
+  return <ShipmentIntelligencePanel analysis={query.data} />;
+}
+
+function Detail({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+      <p className="text-xs font-medium uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="mt-2 truncate text-sm font-semibold text-slate-950">{value}</p>
+    </div>
+  );
+}
+
+function DetailRow({
+  label,
+  value,
+  mono = false,
+}: {
   label: string;
   value: string;
-};
-
-function Detail({
-  label,
-  value,
-}: DetailProps) {
+  mono?: boolean;
+}) {
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white p-5">
-      <p className="text-sm text-zinc-500">
-        {label}
-      </p>
-
-      <p className="mt-2 font-medium text-zinc-950">
-        {value}
-      </p>
-    </div>
-  );
-}
-
-function Identifier({
-  label,
-  value,
-}: DetailProps) {
-  return (
-    <div className="flex flex-col gap-1 sm:flex-row sm:justify-between">
-      <dt className="text-zinc-500">
-        {label}
-      </dt>
-
-      <dd className="break-all font-mono text-xs text-zinc-800">
+    <div className="py-4">
+      <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">{label}</dt>
+      <dd className={`mt-1.5 break-words text-sm text-slate-700 ${mono ? "font-mono text-xs" : ""}`}>
         {value}
       </dd>
     </div>
   );
 }
 
-function getNextShipmentStatus(
-  status: ShipmentStatus,
-): ShipmentStatus | null {
+function getNextShipmentStatus(status: ShipmentStatus): ShipmentStatus | null {
   switch (status) {
     case "draft":
       return "ready";
-
     case "ready":
       return "in_transit";
-
     case "in_transit":
       return "delivered";
-
     case "delivered":
     case "cancelled":
       return null;
   }
 }
 
-function formatValue(
-  value: string,
-): string {
-  return value
-    .split("_")
-    .map(
-      (part) =>
-        part.charAt(0).toUpperCase() +
-        part.slice(1),
-    )
-    .join(" ");
-}
-
-function formatDateTime(
-  value: string,
-): string {
-  return new Intl.DateTimeFormat(
-    undefined,
-    {
-      dateStyle: "medium",
-      timeStyle: "short",
-    },
-  ).format(new Date(value));
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
 }

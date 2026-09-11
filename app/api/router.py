@@ -18,6 +18,7 @@ from app.modules.packages.api.routes import router as packages_router
 from app.modules.payments.api.routes import router as payments_router
 from app.modules.pricing.api.routes import router as pricing_router
 from app.modules.rates.api.routes import router as rates_router
+from app.modules.saas.api.plan_routes import router as plan_router
 from app.modules.saas.api.routes import router as saas_router
 from app.modules.shipment_events.api.routes import (
     router as shipment_events_router,
@@ -46,6 +47,7 @@ def create_api_router(api_v1_prefix: str) -> APIRouter:
     versioned_router.include_router(documents_router)
     versioned_router.include_router(billing_router)
     versioned_router.include_router(payments_router)
+    versioned_router.include_router(plan_router)
     versioned_router.include_router(saas_router)
     versioned_router.include_router(entitlements_router)
     versioned_router.include_router(notifications_router)

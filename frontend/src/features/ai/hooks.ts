@@ -18,15 +18,26 @@ import type {
   AgentRequest,
   AgentResponse,
 } from "@/features/ai/types";
+import { useActiveTenantId } from "@/features/tenants/active-hooks";
 
 const conversationKeys = {
-  all: ["ai", "conversations"] as const,
-  detail: (conversationId: string) =>
-    ["ai", "conversations", conversationId] as const,
+  all: (tenantId: string) =>
+    ["ai", "conversations", tenantId] as const,
+  detail: (
+    tenantId: string,
+    conversationId: string,
+  ) =>
+    [
+      "ai",
+      "conversations",
+      tenantId,
+      conversationId,
+    ] as const,
 };
 
 export function useRunAgent() {
   const queryClient = useQueryClient();
+  const activeTenantIdQuery = useActiveTenantId();
 
   return useMutation<
     AgentResponse,
@@ -35,13 +46,20 @@ export function useRunAgent() {
   >({
     mutationFn: runAgent,
     onSuccess: async (_data, variables) => {
+      const tenantId = activeTenantIdQuery.data;
+
+      if (!tenantId) {
+        return;
+      }
+
       await queryClient.invalidateQueries({
-        queryKey: conversationKeys.all,
+        queryKey: conversationKeys.all(tenantId),
       });
 
       if (variables.conversation_id) {
         await queryClient.invalidateQueries({
           queryKey: conversationKeys.detail(
+            tenantId,
             variables.conversation_id,
           ),
         });
@@ -52,6 +70,7 @@ export function useRunAgent() {
 
 export function useConfirmAgentAction() {
   const queryClient = useQueryClient();
+  const activeTenantIdQuery = useActiveTenantId();
 
   return useMutation<
     AgentActionMutationResponse,
@@ -60,8 +79,14 @@ export function useConfirmAgentAction() {
   >({
     mutationFn: confirmAgentAction,
     onSuccess: async () => {
+      const tenantId = activeTenantIdQuery.data;
+
+      if (!tenantId) {
+        return;
+      }
+
       await queryClient.invalidateQueries({
-        queryKey: conversationKeys.all,
+        queryKey: conversationKeys.all(tenantId),
       });
     },
   });
@@ -69,6 +94,7 @@ export function useConfirmAgentAction() {
 
 export function useCancelAgentAction() {
   const queryClient = useQueryClient();
+  const activeTenantIdQuery = useActiveTenantId();
 
   return useMutation<
     AgentActionMutationResponse,
@@ -77,27 +103,47 @@ export function useCancelAgentAction() {
   >({
     mutationFn: cancelAgentAction,
     onSuccess: async () => {
+      const tenantId = activeTenantIdQuery.data;
+
+      if (!tenantId) {
+        return;
+      }
+
       await queryClient.invalidateQueries({
-        queryKey: conversationKeys.all,
+        queryKey: conversationKeys.all(tenantId),
       });
     },
   });
 }
 
 export function useAIConversations() {
+  const activeTenantIdQuery = useActiveTenantId();
+  const tenantId = readyTenantId(activeTenantIdQuery);
+
   return useQuery({
-    queryKey: conversationKeys.all,
+    queryKey: tenantId
+      ? conversationKeys.all(tenantId)
+      : ["ai", "conversations", "inactive"],
     queryFn: listConversations,
+    enabled: Boolean(tenantId),
+    retry: false,
   });
 }
 
 export function useAIConversation(
   conversationId: string | null,
 ) {
+  const activeTenantIdQuery = useActiveTenantId();
+  const tenantId = readyTenantId(activeTenantIdQuery);
+
   return useQuery({
-    queryKey: conversationId
-      ? conversationKeys.detail(conversationId)
-      : ["ai", "conversations", "none"],
+    queryKey:
+      tenantId && conversationId
+        ? conversationKeys.detail(
+            tenantId,
+            conversationId,
+          )
+        : ["ai", "conversations", "inactive", "none"],
     queryFn: () => {
       if (!conversationId) {
         throw new Error("Conversation id is required");
@@ -105,18 +151,26 @@ export function useAIConversation(
 
       return getConversation(conversationId);
     },
-    enabled: Boolean(conversationId),
+    enabled: Boolean(tenantId && conversationId),
+    retry: false,
   });
 }
 
 export function useCreateAIConversation() {
   const queryClient = useQueryClient();
+  const activeTenantIdQuery = useActiveTenantId();
 
   return useMutation({
     mutationFn: createConversation,
     onSuccess: async () => {
+      const tenantId = activeTenantIdQuery.data;
+
+      if (!tenantId) {
+        return;
+      }
+
       await queryClient.invalidateQueries({
-        queryKey: conversationKeys.all,
+        queryKey: conversationKeys.all(tenantId),
       });
     },
   });
@@ -124,13 +178,30 @@ export function useCreateAIConversation() {
 
 export function useDeleteAIConversation() {
   const queryClient = useQueryClient();
+  const activeTenantIdQuery = useActiveTenantId();
 
   return useMutation({
     mutationFn: deleteConversation,
     onSuccess: async () => {
+      const tenantId = activeTenantIdQuery.data;
+
+      if (!tenantId) {
+        return;
+      }
+
       await queryClient.invalidateQueries({
-        queryKey: conversationKeys.all,
+        queryKey: conversationKeys.all(tenantId),
       });
     },
   });
+}
+
+function readyTenantId(
+  query: ReturnType<typeof useActiveTenantId>,
+): string | null {
+  if (!query.isSuccess || query.isFetching || !query.data) {
+    return null;
+  }
+
+  return query.data;
 }

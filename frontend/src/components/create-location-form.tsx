@@ -312,7 +312,7 @@ export function CreateLocationForm() {
       </Field>
 
       {createLocationMutation.isError && (
-        <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {createLocationMutation.error instanceof
           Error
             ? createLocationMutation.error.message
@@ -325,7 +325,7 @@ export function CreateLocationForm() {
         disabled={
           createLocationMutation.isPending
         }
-        className="rounded-lg bg-zinc-950 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+        className="rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {createLocationMutation.isPending
           ? "Creating..."
@@ -348,14 +348,14 @@ function Field({
 }: FieldProps) {
   return (
     <label className="block">
-      <span className="mb-2 block text-sm font-medium text-zinc-900">
+      <span className="mb-2 block text-sm font-medium text-slate-900">
         {label}
       </span>
 
       {children}
 
       {error && (
-        <span className="mt-2 block text-sm text-red-600">
+        <span className="mt-2 block text-sm text-rose-600">
           {error}
         </span>
       )}
@@ -372,4 +372,4 @@ function normalizeOptionalString(
 }
 
 const inputClassName =
-  "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-zinc-950 outline-none focus:border-zinc-950";
+  "w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-slate-950 outline-none focus:border-cyan-600";

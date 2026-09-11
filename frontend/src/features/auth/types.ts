@@ -26,3 +26,19 @@ export type RegisterUserInput = {
   first_name: string;
   last_name: string;
 };
+
+export type RegisterCompanyInput = RegisterUserInput & {
+  company_name: string;
+  company_slug: string;
+};
+
+export type RegisterCompanyResponse = {
+  user_id: string;
+  tenant_id: string;
+  membership_id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  company_name: string;
+  company_slug: string;
+};
