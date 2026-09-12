@@ -11,15 +11,25 @@ import {
   getLocations,
 } from "@/features/locations/api";
 import { useActiveTenantId } from "@/features/tenants/active-hooks";
+import {
+  canRunTenantScopedQuery,
+  getResolvedActiveTenantId,
+  requireActiveTenantId,
+} from "@/features/tenants/query-state";
 
 export function useLocations() {
   const activeTenantIdQuery = useActiveTenantId();
-  const activeTenantId = readyTenantId(activeTenantIdQuery);
+  const activeTenantId = getResolvedActiveTenantId(
+    activeTenantIdQuery,
+  );
 
   return useQuery({
     queryKey: ["locations", activeTenantId],
-    queryFn: getLocations,
-    enabled: Boolean(activeTenantId),
+    queryFn: () => {
+      requireActiveTenantId(activeTenantIdQuery);
+      return getLocations();
+    },
+    enabled: canRunTenantScopedQuery(activeTenantIdQuery),
     retry: false,
   });
 }
@@ -39,14 +49,4 @@ export function useCreateLocation() {
       });
     },
   });
-}
-
-function readyTenantId(
-  query: ReturnType<typeof useActiveTenantId>,
-): string | null {
-  if (!query.isSuccess || query.isFetching || !query.data) {
-    return null;
-  }
-
-  return query.data;
 }

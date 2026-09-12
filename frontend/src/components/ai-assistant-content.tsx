@@ -1,6 +1,16 @@
 "use client";
 
-import { FormEvent, type ReactNode, useState } from "react";
+import {
+  FormEvent,
+  type ReactNode,
+  useRef,
+  useState,
+} from "react";
+import {
+  usePathname,
+  useRouter,
+  useSearchParams,
+} from "next/navigation";
 
 import { PlanAccessCard } from "@/components/plan-access-card";
 import { Icon } from "@/components/ui/icon";
@@ -51,7 +61,7 @@ export function AIAssistantContent() {
     return (
       <AIPageFrame>
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-800">
-          Unable to verify AI access for this workspace. Review the subscription from Billing or refresh the page.
+          Unable to verify AI access for this workspace. Review the subscription page or refresh the page.
         </div>
       </AIPageFrame>
     );
@@ -129,10 +139,17 @@ function AIPageFrame({
 }
 
 function AIWorkspace() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const [question, setQuestion] = useState("");
-  const [conversationId, setConversationId] = useState<string | null>(null);
   const [optimisticMessage, setOptimisticMessage] = useState<LocalMessage | null>(null);
   const [localContinuation, setLocalContinuation] = useState<AgentContinuation | null>(null);
+
+  const optimisticMessageSequence = useRef(0);
+
+  const conversationId = searchParams.get("conversation");
 
   const conversationsQuery = useAIConversations();
   const conversationQuery = useAIConversation(conversationId);
@@ -158,39 +175,73 @@ function AIWorkspace() {
   const continuation =
     localContinuation ?? conversationQuery.data?.continuation ?? null;
 
+  function setConversationId(nextConversationId: string | null) {
+    const params = new URLSearchParams(searchParams.toString());
+
+    if (nextConversationId) {
+      params.set("conversation", nextConversationId);
+    } else {
+      params.delete("conversation");
+    }
+
+    const query = params.toString();
+
+    router.replace(
+      query ? `${pathname}?${query}` : pathname,
+      { scroll: false },
+    );
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const normalizedQuestion = question.trim();
 
-    if (!normalizedQuestion || isPending || pendingAction) return;
+    if (!normalizedQuestion || isPending || pendingAction) {
+      return;
+    }
+
+    resetMutationErrors();
 
     let activeConversationId = conversationId;
 
-    if (!activeConversationId) {
-      const created = await createConversationMutation.mutateAsync();
-      activeConversationId = created.id;
-      setConversationId(created.id);
-      setLocalContinuation(null);
-    }
-
-    setOptimisticMessage({
-      id: `pending-${Date.now()}`,
-      role: "user",
-      content: normalizedQuestion,
-    });
-    setQuestion("");
-
     try {
+      if (!activeConversationId) {
+        const created =
+          await createConversationMutation.mutateAsync();
+        activeConversationId = created.id;
+        setConversationId(created.id);
+        setLocalContinuation(null);
+      }
+
+      optimisticMessageSequence.current += 1;
+
+      setOptimisticMessage({
+        id: `pending-${optimisticMessageSequence.current}`,
+        role: "user",
+        content: normalizedQuestion,
+      });
+      setQuestion("");
+
       const data = await agentMutation.mutateAsync({
         question: normalizedQuestion,
         conversation_id: activeConversationId,
         continuation,
       });
+
       setLocalContinuation(data.continuation ?? null);
       setOptimisticMessage(null);
     } catch {
       setOptimisticMessage(null);
+      setQuestion(normalizedQuestion);
     }
+  }
+
+  function resetMutationErrors() {
+    agentMutation.reset();
+    createConversationMutation.reset();
+    deleteConversationMutation.reset();
+    confirmActionMutation.reset();
+    cancelActionMutation.reset();
   }
 
   function startNewConversation() {
@@ -198,9 +249,7 @@ function AIWorkspace() {
     setOptimisticMessage(null);
     setLocalContinuation(null);
     setQuestion("");
-    agentMutation.reset();
-    confirmActionMutation.reset();
-    cancelActionMutation.reset();
+    resetMutationErrors();
   }
 
   function selectConversation(selectedConversationId: string) {
@@ -208,15 +257,27 @@ function AIWorkspace() {
     setConversationId(selectedConversationId);
     setOptimisticMessage(null);
     setLocalContinuation(null);
-    agentMutation.reset();
-    confirmActionMutation.reset();
-    cancelActionMutation.reset();
+    resetMutationErrors();
   }
 
   async function removeConversation(selectedConversationId: string) {
-    if (isPending) return;
-    await deleteConversationMutation.mutateAsync(selectedConversationId);
-    if (conversationId === selectedConversationId) startNewConversation();
+    if (isPending) {
+      return;
+    }
+
+    deleteConversationMutation.reset();
+
+    try {
+      await deleteConversationMutation.mutateAsync(
+        selectedConversationId,
+      );
+
+      if (conversationId === selectedConversationId) {
+        startNewConversation();
+      }
+    } catch {
+      // Mutation state renders the error in the workspace.
+    }
   }
 
   function cancelClarification() {
@@ -224,15 +285,41 @@ function AIWorkspace() {
   }
 
   async function confirmPendingAction() {
-    if (!pendingAction || pendingAction.status !== "pending_confirmation" || isPending) return;
-    await confirmActionMutation.mutateAsync(pendingAction.id);
-    agentMutation.reset();
+    if (
+      !pendingAction ||
+      pendingAction.status !== "pending_confirmation" ||
+      isPending
+    ) {
+      return;
+    }
+
+    confirmActionMutation.reset();
+
+    try {
+      await confirmActionMutation.mutateAsync(pendingAction.id);
+      agentMutation.reset();
+    } catch {
+      // Mutation state renders the error in the workspace.
+    }
   }
 
   async function cancelPendingAction() {
-    if (!pendingAction || pendingAction.status !== "pending_confirmation" || isPending) return;
-    await cancelActionMutation.mutateAsync(pendingAction.id);
-    agentMutation.reset();
+    if (
+      !pendingAction ||
+      pendingAction.status !== "pending_confirmation" ||
+      isPending
+    ) {
+      return;
+    }
+
+    cancelActionMutation.reset();
+
+    try {
+      await cancelActionMutation.mutateAsync(pendingAction.id);
+      agentMutation.reset();
+    } catch {
+      // Mutation state renders the error in the workspace.
+    }
   }
 
   const requestError =
@@ -240,9 +327,7 @@ function AIWorkspace() {
     createConversationMutation.error ??
     deleteConversationMutation.error ??
     confirmActionMutation.error ??
-    cancelActionMutation.error ??
-    conversationQuery.error ??
-    conversationsQuery.error;
+    cancelActionMutation.error;
 
   return (
     <div className="space-y-7">
@@ -282,6 +367,10 @@ function AIWorkspace() {
 
             {conversationsQuery.isLoading ? (
               <p className="text-sm text-slate-500">Loading conversations...</p>
+            ) : conversationsQuery.isError ? (
+              <p className="text-sm text-rose-600">
+                {conversationsQuery.error.message}
+              </p>
             ) : conversationsQuery.data?.length === 0 ? (
               <div className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-5 text-center">
                 <Icon name="sparkles" className="mx-auto h-5 w-5 text-slate-400" />
@@ -354,7 +443,15 @@ function AIWorkspace() {
               </div>
             ) : null}
 
-            {messages.length === 0 && !conversationQuery.isLoading ? (
+            {conversationQuery.isError && conversationId ? (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+                {conversationQuery.error.message}
+              </div>
+            ) : null}
+
+            {messages.length === 0 &&
+            !conversationQuery.isLoading &&
+            !conversationQuery.isError ? (
               <WelcomePanel onPrompt={setQuestion} />
             ) : (
               <div className="mx-auto max-w-3xl space-y-5">

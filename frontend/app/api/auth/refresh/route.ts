@@ -1,53 +1,54 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
-import { setAuthCookies } from "@/features/auth/cookies";
-import type { TokenResponse } from "@/features/auth/types";
-import { env } from "@/lib/env";
+import {
+  clearSessionCookies,
+  REFRESH_TOKEN_COOKIE,
+} from "@/features/auth/cookies";
+import {
+  applyAuthenticationState,
+  readBackendResponseBody,
+  refreshAuthentication,
+} from "@/features/auth/server-client";
 
 export async function POST() {
   const cookieStore = await cookies();
 
   const refreshToken =
-    cookieStore.get("novascale_refresh_token")?.value;
+    cookieStore.get(REFRESH_TOKEN_COOKIE)?.value;
 
   if (!refreshToken) {
-    return NextResponse.json(
+    const response = NextResponse.json(
       { detail: "Not authenticated" },
       { status: 401 },
     );
+
+    clearSessionCookies(response);
+    return response;
   }
 
-  const response = await fetch(
-    `${env.NEXT_PUBLIC_API_BASE_URL}/api/v1/auth/refresh`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        refresh_token: refreshToken,
-      }),
-      cache: "no-store",
-    },
+  const result = await refreshAuthentication(
+    refreshToken,
   );
 
-  const data = await response.json();
-
-  if (!response.ok) {
-    return NextResponse.json(data, {
-      status: response.status,
+  if (!result.response.ok) {
+    const body = await readBackendResponseBody(
+      result.response,
+    );
+    const response = NextResponse.json(body, {
+      status: result.response.status,
     });
+
+    applyAuthenticationState(response, result);
+    return response;
   }
 
-  const tokens = data as TokenResponse;
-
-  const nextResponse = NextResponse.json(
+  const response = NextResponse.json(
     { authenticated: true },
     { status: 200 },
   );
 
-  setAuthCookies(nextResponse, tokens);
+  applyAuthenticationState(response, result);
 
-  return nextResponse;
+  return response;
 }

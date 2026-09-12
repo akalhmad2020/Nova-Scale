@@ -42,6 +42,8 @@ export const registerSchema = z
       .min(1, "Company name is required")
       .max(200, "Company name must be at most 200 characters"),
 
+    plan_code: z.enum(["starter", "professional"]),
+
     company_slug: z
       .string()
       .trim()

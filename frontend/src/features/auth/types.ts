@@ -1,3 +1,5 @@
+import type { PlanCode } from "@/features/saas/types";
+
 export type User = {
   id: string;
   email: string;
@@ -30,6 +32,7 @@ export type RegisterUserInput = {
 export type RegisterCompanyInput = RegisterUserInput & {
   company_name: string;
   company_slug: string;
+  plan_code: Exclude<PlanCode, "enterprise">;
 };
 
 export type RegisterCompanyResponse = {

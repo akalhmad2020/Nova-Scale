@@ -1,6 +1,7 @@
 import type { NextResponse } from "next/server";
 
 import type { TokenResponse } from "@/features/auth/types";
+import { ACTIVE_TENANT_COOKIE } from "@/features/tenants/active-tenant";
 
 export const ACCESS_TOKEN_COOKIE =
   "novascale_access_token";
@@ -62,4 +63,27 @@ export function clearAuthCookies(
       maxAge: 0,
     },
   );
+}
+
+export function clearActiveTenantCookie(
+  response: NextResponse,
+) {
+  response.cookies.set(
+    ACTIVE_TENANT_COOKIE,
+    "",
+    {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 0,
+    },
+  );
+}
+
+export function clearSessionCookies(
+  response: NextResponse,
+) {
+  clearAuthCookies(response);
+  clearActiveTenantCookie(response);
 }

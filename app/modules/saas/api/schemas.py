@@ -19,6 +19,7 @@ class PlanResponse(BaseModel):
     description: str
     display_order: int
     recommended: bool
+    self_service: bool
     entitlements: PlanEntitlementsResponse
 
 
@@ -34,3 +35,7 @@ class SubscriptionResponse(BaseModel):
     provider: str | None
     created_at: datetime
     updated_at: datetime
+
+
+class ChangePlanRequest(BaseModel):
+    plan_code: PlanCode

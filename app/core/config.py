@@ -1,5 +1,6 @@
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import unquote, urlsplit
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -40,6 +41,11 @@ class Settings(BaseSettings):
     )
 
     hsts_enabled: bool = False
+
+    billing_provider: Literal[
+        "portfolio",
+        "stripe",
+    ] = "portfolio"
 
     database_url: str = (
         "postgresql+asyncpg://novascale_app:novascale_app_local_change_me@localhost:5432/novascale"
@@ -191,20 +197,50 @@ class Settings(BaseSettings):
         ge=1.0,
         le=600.0,
     )
-    ai_ollama_max_attempts: int = Field(default=2, ge=1, le=4)
-    ai_ollama_retry_backoff_seconds: float = Field(default=0.25, ge=0.0, le=5.0)
-    ai_max_prompt_characters: int = Field(default=32_000, ge=1_000, le=200_000)
-    ai_max_system_prompt_characters: int = Field(default=16_000, ge=1_000, le=100_000)
-    ai_max_response_characters: int = Field(default=32_000, ge=1_000, le=200_000)
-    ai_max_output_tokens: int = Field(default=2_048, ge=64, le=16_384)
-    ai_max_context_window: int = Field(default=8_192, ge=512, le=131_072)
+    ai_ollama_max_attempts: int = Field(
+        default=2,
+        ge=1,
+        le=4,
+    )
+    ai_ollama_retry_backoff_seconds: float = Field(
+        default=0.25,
+        ge=0.0,
+        le=5.0,
+    )
+    ai_max_prompt_characters: int = Field(
+        default=32_000,
+        ge=1_000,
+        le=200_000,
+    )
+    ai_max_system_prompt_characters: int = Field(
+        default=16_000,
+        ge=1_000,
+        le=100_000,
+    )
+    ai_max_response_characters: int = Field(
+        default=32_000,
+        ge=1_000,
+        le=200_000,
+    )
+    ai_max_output_tokens: int = Field(
+        default=2_048,
+        ge=64,
+        le=16_384,
+    )
+    ai_max_context_window: int = Field(
+        default=8_192,
+        ge=512,
+        le=131_072,
+    )
 
     ai_embedding_provider: Literal["ollama"] = "ollama"
     ai_ollama_embedding_model: str = "nomic-embed-text"
     ai_document_storage_root: str = "./storage"
 
     @model_validator(mode="after")
-    def validate_production_settings(self) -> "Settings":
+    def validate_production_settings(
+        self,
+    ) -> "Settings":
         if self.app_env != "production":
             return self
 
@@ -234,7 +270,61 @@ class Settings(BaseSettings):
         if self.auth_jwt_secret in unsafe_jwt_secrets:
             raise ValueError("AUTH_JWT_SECRET must not use a placeholder value in production.")
 
+        self._validate_production_database_url(
+            setting_name="DATABASE_URL",
+            value=self.database_url,
+        )
+
+        self._validate_production_database_url(
+            setting_name="MIGRATION_DATABASE_URL",
+            value=self.migration_database_url,
+        )
+
         return self
+
+    @staticmethod
+    def _validate_production_database_url(
+        *,
+        setting_name: str,
+        value: str,
+    ) -> None:
+        try:
+            parsed = urlsplit(value)
+        except ValueError as exc:
+            raise ValueError(
+                f"{setting_name} must be a valid PostgreSQL URL in production."
+            ) from exc
+
+        if not parsed.scheme.startswith("postgresql"):
+            raise ValueError(f"{setting_name} must use PostgreSQL in production.")
+
+        if not parsed.hostname:
+            raise ValueError(f"{setting_name} must contain a database host in production.")
+
+        if not parsed.username:
+            raise ValueError(f"{setting_name} must contain a database username in production.")
+
+        password = unquote(parsed.password) if parsed.password is not None else ""
+
+        if not password:
+            raise ValueError(f"{setting_name} must contain a database password in production.")
+
+        unsafe_passwords = {
+            "novascale_local_change_me",
+            "novascale_app_local_change_me",
+            "change_me",
+            "changeme",
+            "password",
+        }
+
+        normalized_password = password.strip().lower()
+
+        if normalized_password in unsafe_passwords or "change_me" in normalized_password:
+            raise ValueError(
+                f"{setting_name} must not use development "
+                "or placeholder database credentials "
+                "in production."
+            )
 
 
 @lru_cache

@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { setAuthCookies } from "@/features/auth/cookies";
+import {
+  clearActiveTenantCookie,
+  setAuthCookies,
+} from "@/features/auth/cookies";
 import type {
   LoginCredentials,
   TokenResponse,
@@ -12,7 +15,7 @@ export async function POST(request: Request) {
     (await request.json()) as LoginCredentials;
 
   const response = await fetch(
-    `${env.NEXT_PUBLIC_API_BASE_URL}/api/v1/auth/login`,
+    `${env.BACKEND_API_BASE_URL}/api/v1/auth/login`,
     {
       method: "POST",
       headers: {
@@ -39,6 +42,7 @@ export async function POST(request: Request) {
   );
 
   setAuthCookies(nextResponse, tokens);
+  clearActiveTenantCookie(nextResponse);
 
   return nextResponse;
 }

@@ -10,7 +10,7 @@ export async function POST(request: Request) {
   const input = (await request.json()) as RegisterCompanyInput;
 
   const response = await fetch(
-    `${env.NEXT_PUBLIC_API_BASE_URL}/api/v1/auth/register`,
+    `${env.BACKEND_API_BASE_URL}/api/v1/auth/register`,
     {
       method: "POST",
       headers: {

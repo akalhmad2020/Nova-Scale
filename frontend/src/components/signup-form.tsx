@@ -8,6 +8,7 @@ import { useForm, useWatch } from "react-hook-form";
 
 import { Icon } from "@/components/ui/icon";
 import { useRegisterCompany } from "@/features/auth/hooks";
+import { usePlans } from "@/features/saas/hooks";
 import {
   registerSchema,
   type RegisterFormValues,
@@ -30,6 +31,7 @@ function toWorkspaceSlug(value: string): string {
 export function SignupForm() {
   const router = useRouter();
   const registerMutation = useRegisterCompany();
+  const plansQuery = usePlans();
   const [slugWasEdited, setSlugWasEdited] = useState(false);
 
   const {
@@ -46,9 +48,16 @@ export function SignupForm() {
       email: "",
       company_name: "",
       company_slug: "",
+      plan_code: "professional",
       password: "",
       confirm_password: "",
     },
+  });
+
+  const selectedPlan = useWatch({
+    control,
+    name: "plan_code",
+    defaultValue: "professional",
   });
 
   const companyName = useWatch({
@@ -76,6 +85,7 @@ export function SignupForm() {
       last_name: values.last_name,
       company_name: values.company_name,
       company_slug: values.company_slug,
+      plan_code: values.plan_code,
     };
 
     await registerMutation.mutateAsync(input);
@@ -306,6 +316,81 @@ export function SignupForm() {
                 </div>
 
                 <div className="border-t border-slate-100 pt-6">
+                  <div className="mb-3 flex items-end justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+                        Choose your plan
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-slate-500">
+                        Professional activates immediately in this portfolio environment, with no payment required.
+                      </p>
+                    </div>
+                  </div>
+
+                  {plansQuery.isPending ? (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+                      Loading plans...
+                    </div>
+                  ) : plansQuery.isError ? (
+                    <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+                      Unable to load the plan catalog. Refresh the page and try again.
+                    </div>
+                  ) : (
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      {plansQuery.data.map((plan) => {
+                        const selectable = plan.code === "starter" || plan.code === "professional";
+                        const selected = selectable && selectedPlan === plan.code;
+
+                        return (
+                          <button
+                            key={plan.code}
+                            type="button"
+                            disabled={!selectable}
+                            onClick={() => {
+                              if (plan.code !== "starter" && plan.code !== "professional") {
+                                return;
+                              }
+
+                              setValue("plan_code", plan.code, {
+                                shouldDirty: true,
+                                shouldValidate: true,
+                              });
+                            }}
+                            className={`relative rounded-xl border p-4 text-left transition ${
+                              selected
+                                ? "border-cyan-400 bg-cyan-50/70 ring-2 ring-cyan-500/10"
+                                : "border-slate-200 bg-white hover:border-slate-300"
+                            } disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-70`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-semibold text-slate-950">{plan.name}</span>
+                              {plan.recommended ? (
+                                <span className="rounded-full bg-cyan-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-cyan-800">
+                                  Recommended
+                                </span>
+                              ) : null}
+                            </div>
+                            <p className="mt-2 text-xs leading-5 text-slate-500">
+                              {plan.description}
+                            </p>
+                            <p className="mt-3 text-xs font-semibold text-slate-700">
+                              {plan.code === "professional"
+                                ? "AI + RAG + webhooks"
+                                : plan.code === "starter"
+                                  ? "Core operations"
+                                  : "Contact sales"}
+                            </p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {errors.plan_code?.message ? (
+                    <p className="mt-2 text-sm text-rose-600">{errors.plan_code.message}</p>
+                  ) : null}
+                </div>
+
+                <div className="border-t border-slate-100 pt-6">
                   <p className="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
                     Security
                   </p>
@@ -367,7 +452,7 @@ export function SignupForm() {
               >
                 {registerMutation.isPending
                   ? "Creating workspace..."
-                  : "Create workspace"}
+                  : `Create workspace with ${selectedPlan === "professional" ? "Professional" : "Starter"}`}
 
                 {!registerMutation.isPending ? (
                   <Icon

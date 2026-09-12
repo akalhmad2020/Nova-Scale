@@ -1,6 +1,10 @@
 "use client";
 
-import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 
 import {
   getCurrentUser,
@@ -10,8 +14,13 @@ import {
 } from "@/features/auth/api";
 
 export function useLogin() {
+  const queryClient = useQueryClient();
+
   return useMutation({
     mutationFn: login,
+    onSuccess: async () => {
+      await resetSessionQueries(queryClient);
+    },
   });
 }
 
@@ -30,7 +39,19 @@ export function useCurrentUser() {
 }
 
 export function useLogout() {
+  const queryClient = useQueryClient();
+
   return useMutation({
     mutationFn: logout,
+    onSuccess: async () => {
+      await resetSessionQueries(queryClient);
+    },
   });
+}
+
+async function resetSessionQueries(
+  queryClient: ReturnType<typeof useQueryClient>,
+): Promise<void> {
+  await queryClient.cancelQueries();
+  queryClient.removeQueries();
 }

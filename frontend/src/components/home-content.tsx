@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { getHealth } from "@/api/health";
-import { CreateTenantForm } from "@/components/create-tenant-form";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/components/ui/icon";
 import { MetricCard } from "@/components/ui/metric-card";
@@ -161,56 +160,58 @@ export function HomeContent() {
         </Surface>
 
         <Surface>
-          <SurfaceHeader
-            title="Workspaces"
-            description="Your tenant memberships"
-            meta={
-              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
-                {tenantsQuery.data?.length ?? 0}
-              </span>
-            }
-          />
+  <SurfaceHeader
+    title="Workspace"
+    description="Your NovaScale tenant workspace"
+    meta={
+      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+        {tenantsQuery.data?.length ?? 0}
+      </span>
+    }
+  />
 
-          {tenantsQuery.isPending ? (
-            <div className="p-6 text-sm text-slate-500">Loading workspaces...</div>
-          ) : tenantsQuery.isError ? (
-            <div className="p-6 text-sm text-rose-600">Unable to load workspaces.</div>
-          ) : tenantsQuery.data?.length ? (
-            <div className="divide-y divide-slate-100">
-              {tenantsQuery.data.map((tenant) => (
-                <div key={tenant.id} className="flex items-center gap-3 px-5 py-4 sm:px-6">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
-                    <Icon name="building" className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-slate-900">{tenant.name}</p>
-                    <p className="truncate text-xs text-slate-500">{tenant.slug}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <EmptyState
-              icon="building"
-              title="No workspace yet"
-              description="Create your first tenant workspace to begin operating in NovaScale."
+  {tenantsQuery.isPending ? (
+    <div className="p-6 text-sm text-slate-500">
+      Loading workspace...
+    </div>
+  ) : tenantsQuery.isError ? (
+    <div className="p-6 text-sm text-rose-600">
+      Unable to load workspace.
+    </div>
+  ) : tenantsQuery.data?.length ? (
+    <div className="divide-y divide-slate-100">
+      {tenantsQuery.data.map((tenant) => (
+        <div
+          key={tenant.id}
+          className="flex items-center gap-3 px-5 py-4 sm:px-6"
+        >
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+            <Icon
+              name="building"
+              className="h-4 w-4"
             />
-          )}
+          </div>
 
-          {tenantsQuery.data ? (
-            <div className="border-t border-slate-100 p-5 sm:p-6">
-              <details className="group">
-                <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold text-slate-700">
-                  Create another workspace
-                  <span className="text-slate-400 transition group-open:rotate-45">+</span>
-                </summary>
-                <div className="mt-5">
-                  <CreateTenantForm />
-                </div>
-              </details>
-            </div>
-          ) : null}
-        </Surface>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-slate-900">
+              {tenant.name}
+            </p>
+
+            <p className="truncate text-xs text-slate-500">
+              {tenant.slug}
+            </p>
+          </div>
+        </div>
+      ))}
+    </div>
+  ) : (
+    <EmptyState
+      icon="building"
+      title="Workspace unavailable"
+      description="No tenant workspace is currently associated with this account."
+    />
+  )}
+</Surface>
       </div>
     </div>
   );

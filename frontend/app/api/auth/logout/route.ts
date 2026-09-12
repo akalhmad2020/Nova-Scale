@@ -1,19 +1,22 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
-import { clearAuthCookies } from "@/features/auth/cookies";
+import {
+  clearSessionCookies,
+  REFRESH_TOKEN_COOKIE,
+} from "@/features/auth/cookies";
 import { env } from "@/lib/env";
 
 export async function POST() {
   const cookieStore = await cookies();
 
   const refreshToken =
-    cookieStore.get("novascale_refresh_token")?.value;
+    cookieStore.get(REFRESH_TOKEN_COOKIE)?.value;
 
   if (refreshToken) {
     try {
       await fetch(
-        `${env.NEXT_PUBLIC_API_BASE_URL}/api/v1/auth/logout`,
+        `${env.BACKEND_API_BASE_URL}/api/v1/auth/logout`,
         {
           method: "POST",
           headers: {
@@ -35,7 +38,7 @@ export async function POST() {
     { status: 200 },
   );
 
-  clearAuthCookies(response);
+  clearSessionCookies(response);
 
   return response;
 }

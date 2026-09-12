@@ -55,6 +55,12 @@ const NAVIGATION: NavigationItem[] = [
     icon: "billing",
   },
   {
+    href: "/subscription",
+    label: "Subscription",
+    description: "Plan & platform access",
+    icon: "billing",
+  },
+  {
     href: "/ai",
     label: "NovaScale AI",
     description: "Operational copilot",

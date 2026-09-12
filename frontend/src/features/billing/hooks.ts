@@ -20,32 +20,51 @@ import type {
   InvoiceLine,
 } from "@/features/billing/types";
 import { useActiveTenantId } from "@/features/tenants/active-hooks";
+import {
+  canRunTenantScopedQuery,
+  getResolvedActiveTenantId,
+  requireActiveTenantId,
+} from "@/features/tenants/query-state";
 
 export function useInvoices() {
   const activeTenantIdQuery = useActiveTenantId();
-  const activeTenantId = readyTenantId(activeTenantIdQuery);
+  const activeTenantId = getResolvedActiveTenantId(
+    activeTenantIdQuery,
+  );
 
   return useQuery({
     queryKey: ["invoices", activeTenantId],
-    queryFn: getInvoices,
-    enabled: Boolean(activeTenantId),
+    queryFn: () => {
+      requireActiveTenantId(activeTenantIdQuery);
+      return getInvoices();
+    },
+    enabled: canRunTenantScopedQuery(activeTenantIdQuery),
   });
 }
 
 export function useInvoice(invoiceId: string) {
   const activeTenantIdQuery = useActiveTenantId();
-  const activeTenantId = readyTenantId(activeTenantIdQuery);
+  const activeTenantId = getResolvedActiveTenantId(
+    activeTenantIdQuery,
+  );
 
   return useQuery({
     queryKey: ["invoice", activeTenantId, invoiceId],
-    queryFn: () => getInvoice(invoiceId),
-    enabled: Boolean(activeTenantId && invoiceId),
+    queryFn: () => {
+      requireActiveTenantId(activeTenantIdQuery);
+      return getInvoice(invoiceId);
+    },
+    enabled:
+      Boolean(invoiceId) &&
+      canRunTenantScopedQuery(activeTenantIdQuery),
   });
 }
 
 export function useInvoiceLines(invoiceId: string) {
   const activeTenantIdQuery = useActiveTenantId();
-  const activeTenantId = readyTenantId(activeTenantIdQuery);
+  const activeTenantId = getResolvedActiveTenantId(
+    activeTenantIdQuery,
+  );
 
   return useQuery({
     queryKey: [
@@ -53,8 +72,13 @@ export function useInvoiceLines(invoiceId: string) {
       activeTenantId,
       invoiceId,
     ],
-    queryFn: () => getInvoiceLines(invoiceId),
-    enabled: Boolean(activeTenantId && invoiceId),
+    queryFn: () => {
+      requireActiveTenantId(activeTenantIdQuery);
+      return getInvoiceLines(invoiceId);
+    },
+    enabled:
+      Boolean(invoiceId) &&
+      canRunTenantScopedQuery(activeTenantIdQuery),
   });
 }
 
@@ -188,14 +212,4 @@ export function useVoidInvoice(
       });
     },
   });
-}
-
-function readyTenantId(
-  query: ReturnType<typeof useActiveTenantId>,
-): string | null {
-  if (!query.isSuccess || query.isFetching || !query.data) {
-    return null;
-  }
-
-  return query.data;
 }

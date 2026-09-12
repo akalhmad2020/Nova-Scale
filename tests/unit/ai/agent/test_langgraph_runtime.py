@@ -44,7 +44,6 @@ from app.ai.infrastructure.agent.langgraph_runtime import (
     LangGraphAgentRuntime,
 )
 from app.modules.identity.domain.permissions import Permissions
-from app.modules.shipments.application.exceptions import ShipmentNotFoundError
 from app.modules.shipments.application.use_cases.get_shipment import GetShipment
 from app.modules.shipments.domain.enums import (
     ServiceType,
@@ -429,12 +428,19 @@ async def test_langgraph_agent_runtime_uses_runtime_tenant_context() -> None:
         summarize_shipment_service=summarize_shipment_service,
     )
 
-    with pytest.raises(ShipmentNotFoundError):
-        await runtime.execute(
-            tenant_id=uuid4(),
-            role_id=TEST_ROLE_ID,
-            question="Where is shipment SHIP-001?",
-        )
+    result = await runtime.execute(
+        tenant_id=uuid4(),
+        role_id=TEST_ROLE_ID,
+        question="Where is shipment SHIP-001?",
+    )
+
+    assert (
+        result == "I couldn't find a shipment matching 'SHIP-001' "
+        "in the active workspace. Please check the tracking number, "
+        "shipment UUID, or reference and try again."
+    )
+
+    assert len(llm_provider.requests) == 0
 
 
 @pytest.mark.asyncio
