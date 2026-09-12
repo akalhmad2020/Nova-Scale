@@ -11,15 +11,25 @@ import {
   getCustomers,
 } from "@/features/customers/api";
 import { useActiveTenantId } from "@/features/tenants/active-hooks";
+import {
+  canRunTenantScopedQuery,
+  getResolvedActiveTenantId,
+  requireActiveTenantId,
+} from "@/features/tenants/query-state";
 
 export function useCustomers() {
   const activeTenantIdQuery = useActiveTenantId();
-  const activeTenantId = readyTenantId(activeTenantIdQuery);
+  const activeTenantId = getResolvedActiveTenantId(
+    activeTenantIdQuery,
+  );
 
   return useQuery({
     queryKey: ["customers", activeTenantId],
-    queryFn: getCustomers,
-    enabled: Boolean(activeTenantId),
+    queryFn: () => {
+      requireActiveTenantId(activeTenantIdQuery);
+      return getCustomers();
+    },
+    enabled: canRunTenantScopedQuery(activeTenantIdQuery),
     retry: false,
   });
 }
@@ -39,14 +49,4 @@ export function useCreateCustomer() {
       });
     },
   });
-}
-
-function readyTenantId(
-  query: ReturnType<typeof useActiveTenantId>,
-): string | null {
-  if (!query.isSuccess || query.isFetching || !query.data) {
-    return null;
-  }
-
-  return query.data;
 }

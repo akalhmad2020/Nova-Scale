@@ -21,7 +21,7 @@ export function useActiveTenantId() {
     queryKey: ACTIVE_TENANT_QUERY_KEY,
     queryFn: getActiveTenantId,
     retry: false,
-    refetchOnMount: "always",
+    staleTime: Infinity,
   });
 }
 

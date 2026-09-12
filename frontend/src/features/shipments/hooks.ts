@@ -18,15 +18,25 @@ import {
 } from "@/features/shipments/api";
 import type { TransitionShipmentStatusInput } from "@/features/shipments/types";
 import { useActiveTenantId } from "@/features/tenants/active-hooks";
+import {
+  canRunTenantScopedQuery,
+  getResolvedActiveTenantId,
+  requireActiveTenantId,
+} from "@/features/tenants/query-state";
 
 export function useShipments() {
   const activeTenantIdQuery = useActiveTenantId();
-  const activeTenantId = readyTenantId(activeTenantIdQuery);
+  const activeTenantId = getResolvedActiveTenantId(
+    activeTenantIdQuery,
+  );
 
   return useQuery({
     queryKey: ["shipments", activeTenantId],
-    queryFn: getShipments,
-    enabled: Boolean(activeTenantId),
+    queryFn: () => {
+      requireActiveTenantId(activeTenantIdQuery);
+      return getShipments();
+    },
+    enabled: canRunTenantScopedQuery(activeTenantIdQuery),
     retry: false,
   });
 }
@@ -50,7 +60,9 @@ export function useCreateShipment() {
 
 export function useShipment(shipmentId: string) {
   const activeTenantIdQuery = useActiveTenantId();
-  const activeTenantId = readyTenantId(activeTenantIdQuery);
+  const activeTenantId = getResolvedActiveTenantId(
+    activeTenantIdQuery,
+  );
 
   return useQuery({
     queryKey: [
@@ -58,8 +70,13 @@ export function useShipment(shipmentId: string) {
       activeTenantId,
       shipmentId,
     ],
-    queryFn: () => getShipment(shipmentId),
-    enabled: Boolean(activeTenantId && shipmentId),
+    queryFn: () => {
+      requireActiveTenantId(activeTenantIdQuery);
+      return getShipment(shipmentId);
+    },
+    enabled:
+      Boolean(shipmentId) &&
+      canRunTenantScopedQuery(activeTenantIdQuery),
     retry: false,
   });
 }
@@ -68,7 +85,9 @@ export function useShipmentOperationalAnalysis(
   shipmentId: string,
 ) {
   const activeTenantIdQuery = useActiveTenantId();
-  const activeTenantId = readyTenantId(activeTenantIdQuery);
+  const activeTenantId = getResolvedActiveTenantId(
+    activeTenantIdQuery,
+  );
 
   return useQuery({
     queryKey: [
@@ -76,9 +95,13 @@ export function useShipmentOperationalAnalysis(
       activeTenantId,
       shipmentId,
     ],
-    queryFn: () =>
-      getShipmentOperationalAnalysis(shipmentId),
-    enabled: Boolean(activeTenantId && shipmentId),
+    queryFn: () => {
+      requireActiveTenantId(activeTenantIdQuery);
+      return getShipmentOperationalAnalysis(shipmentId);
+    },
+    enabled:
+      Boolean(shipmentId) &&
+      canRunTenantScopedQuery(activeTenantIdQuery),
     retry: false,
   });
 }
@@ -87,7 +110,9 @@ export function useShipmentEvents(
   shipmentId: string,
 ) {
   const activeTenantIdQuery = useActiveTenantId();
-  const activeTenantId = readyTenantId(activeTenantIdQuery);
+  const activeTenantId = getResolvedActiveTenantId(
+    activeTenantIdQuery,
+  );
 
   return useQuery({
     queryKey: [
@@ -95,8 +120,13 @@ export function useShipmentEvents(
       activeTenantId,
       shipmentId,
     ],
-    queryFn: () => getShipmentEvents(shipmentId),
-    enabled: Boolean(activeTenantId && shipmentId),
+    queryFn: () => {
+      requireActiveTenantId(activeTenantIdQuery);
+      return getShipmentEvents(shipmentId);
+    },
+    enabled:
+      Boolean(shipmentId) &&
+      canRunTenantScopedQuery(activeTenantIdQuery),
     retry: false,
   });
 }
@@ -170,14 +200,4 @@ export function useRecordShipmentEvent(
       ]);
     },
   });
-}
-
-function readyTenantId(
-  query: ReturnType<typeof useActiveTenantId>,
-): string | null {
-  if (!query.isSuccess || query.isFetching || !query.data) {
-    return null;
-  }
-
-  return query.data;
 }

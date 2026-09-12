@@ -12,6 +12,11 @@ import {
   getPlans,
 } from "@/features/saas/api";
 import { useActiveTenantId } from "@/features/tenants/active-hooks";
+import {
+  canRunTenantScopedQuery,
+  getResolvedActiveTenantId,
+  requireActiveTenantId,
+} from "@/features/tenants/query-state";
 
 export function usePlans() {
   return useQuery({
@@ -24,10 +29,8 @@ export function usePlans() {
 
 export function useCurrentSubscription() {
   const activeTenantIdQuery = useActiveTenantId();
-  const activeTenantId = getReadyTenantId(
-    activeTenantIdQuery.data,
-    activeTenantIdQuery.isSuccess,
-    activeTenantIdQuery.isFetching,
+  const activeTenantId = getResolvedActiveTenantId(
+    activeTenantIdQuery,
   );
 
   return useQuery({
@@ -36,8 +39,11 @@ export function useCurrentSubscription() {
       "subscription",
       activeTenantId,
     ],
-    queryFn: getCurrentSubscription,
-    enabled: Boolean(activeTenantId),
+    queryFn: () => {
+      requireActiveTenantId(activeTenantIdQuery);
+      return getCurrentSubscription();
+    },
+    enabled: canRunTenantScopedQuery(activeTenantIdQuery),
     retry: false,
   });
 }
@@ -64,16 +70,4 @@ export function useChangeSubscriptionPlan() {
       });
     },
   });
-}
-
-function getReadyTenantId(
-  tenantId: string | null | undefined,
-  isSuccess: boolean,
-  isFetching: boolean,
-): string | null {
-  if (!isSuccess || isFetching || !tenantId) {
-    return null;
-  }
-
-  return tenantId;
 }
