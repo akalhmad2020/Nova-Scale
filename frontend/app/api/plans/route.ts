@@ -4,7 +4,7 @@ import { env } from "@/lib/env";
 
 export async function GET() {
   const backendResponse = await fetch(
-    `${env.NEXT_PUBLIC_API_BASE_URL}/api/v1/plans`,
+    `${env.BACKEND_API_BASE_URL}/api/v1/plans`,
     {
       method: "GET",
       cache: "no-store",

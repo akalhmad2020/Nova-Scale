@@ -5,7 +5,7 @@ import { env } from "@/lib/env";
 export async function GET() {
   try {
     const response = await fetch(
-      `${env.NEXT_PUBLIC_API_BASE_URL}/health`,
+      `${env.BACKEND_API_BASE_URL}/health`,
       {
         method: "GET",
         cache: "no-store",

@@ -251,3 +251,61 @@ Before a production deployment is considered ready:
 - `/health/ready` succeeds.
 - Backend containers run as a non-root user.
 - The notification worker remains disabled unless production providers exist.
+## 13. Frontend / BFF
+
+The production frontend is a Next.js standalone server and acts as the browser-facing
+BFF (Backend for Frontend).
+
+Expected application flow:
+
+    Browser -> HTTPS edge -> Next.js :3000 -> FastAPI :8000 -> PostgreSQL
+
+The browser must not receive the internal FastAPI address. Next.js receives the
+server-only environment variable:
+
+    BACKEND_API_BASE_URL=http://backend:8000
+
+Do not rename this variable to a `NEXT_PUBLIC_*` variable. `NEXT_PUBLIC_*` values may
+be embedded into browser bundles by Next.js.
+
+The production Compose configuration publishes Next.js only on host loopback by
+default (`127.0.0.1:3000`). A host reverse proxy can forward public HTTPS traffic to
+that address. FastAPI and PostgreSQL remain unpublished.
+
+The Next.js production image uses `output: "standalone"`, runs as a non-root user,
+and disables the `X-Powered-By` response header. Baseline browser security headers
+are configured in `frontend/next.config.ts`.
+
+A strict Content-Security-Policy is intentionally not enabled blindly. Add CSP only
+after validating all Next.js runtime scripts and application assets in the actual
+production environment; an incorrect CSP can break hydration or authentication.
+
+## 14. Production Compose Commands
+
+Validate the merged development base and production override before deployment:
+
+    docker compose \
+      -f docker-compose.yml \
+      -f docker-compose.prod.yml \
+      --env-file .env.production \
+      config
+
+Build the production images:
+
+    docker compose \
+      -f docker-compose.yml \
+      -f docker-compose.prod.yml \
+      --env-file .env.production \
+      build
+
+Start the production stack:
+
+    docker compose \
+      -f docker-compose.yml \
+      -f docker-compose.prod.yml \
+      --env-file .env.production \
+      up -d
+
+Do not deploy with `.env.production.example`. Copy it to `.env.production`, replace
+all `CHANGE_ME` values, URL-encode database passwords where required, and keep the
+real file outside Git.

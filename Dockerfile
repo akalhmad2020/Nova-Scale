@@ -26,7 +26,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH="/app/.venv/bin:$PATH"
 WORKDIR /app
 RUN groupadd --system novascale \
-    && useradd --system --gid novascale --home-dir /nonexistent --no-create-home novascale
+    && useradd --system --gid novascale --home-dir /nonexistent --no-create-home novascale \
+    && mkdir -p /data \
+    && chown novascale:novascale /data
 COPY --from=production-builder /app/.venv /app/.venv
 COPY app /app/app
 COPY migrations /app/migrations

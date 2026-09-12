@@ -11,6 +11,8 @@ x-production-environment: &production-environment
   HSTS_ENABLED: "true"
 
   DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+  MIGRATION_DATABASE_URL: ${MIGRATION_DATABASE_URL:?MIGRATION_DATABASE_URL is required}
+
   DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
   DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-20}
   DB_POOL_TIMEOUT_SECONDS: ${DB_POOL_TIMEOUT_SECONDS:-30}
@@ -28,6 +30,22 @@ x-production-environment: &production-environment
   LOGIN_MAX_FAILED_ATTEMPTS: ${LOGIN_MAX_FAILED_ATTEMPTS:-5}
   LOGIN_LOCKOUT_MINUTES: ${LOGIN_LOCKOUT_MINUTES:-15}
 
+  AI_LLM_PROVIDER: ${AI_LLM_PROVIDER:-ollama}
+  AI_OLLAMA_BASE_URL: ${AI_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+  AI_OLLAMA_MODEL: ${AI_OLLAMA_MODEL:-qwen2.5:3b}
+  AI_OLLAMA_TIMEOUT_SECONDS: ${AI_OLLAMA_TIMEOUT_SECONDS:-360}
+  AI_OLLAMA_MAX_ATTEMPTS: ${AI_OLLAMA_MAX_ATTEMPTS:-2}
+  AI_OLLAMA_RETRY_BACKOFF_SECONDS: ${AI_OLLAMA_RETRY_BACKOFF_SECONDS:-0.25}
+  AI_MAX_PROMPT_CHARACTERS: ${AI_MAX_PROMPT_CHARACTERS:-32000}
+  AI_MAX_SYSTEM_PROMPT_CHARACTERS: ${AI_MAX_SYSTEM_PROMPT_CHARACTERS:-16000}
+  AI_MAX_RESPONSE_CHARACTERS: ${AI_MAX_RESPONSE_CHARACTERS:-32000}
+  AI_MAX_OUTPUT_TOKENS: ${AI_MAX_OUTPUT_TOKENS:-2048}
+  AI_MAX_CONTEXT_WINDOW: ${AI_MAX_CONTEXT_WINDOW:-8192}
+
+  AI_EMBEDDING_PROVIDER: ${AI_EMBEDDING_PROVIDER:-ollama}
+  AI_OLLAMA_EMBEDDING_MODEL: ${AI_OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
+  AI_DOCUMENT_STORAGE_ROOT: /data
+
 
 services:
   postgres:
@@ -37,6 +55,10 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+
+      APP_DB_USER: ${APP_DB_USER:-novascale_app}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?APP_DB_PASSWORD is required}
+
 
   migrate:
     build:
@@ -62,6 +84,7 @@ services:
     healthcheck:
       disable: true
 
+
   backend:
     build:
       context: .
@@ -83,13 +106,19 @@ services:
       <<: *production-environment
 
     ports: !reset []
-    volumes: !reset []
+
+    volumes:
+      - ai_storage:/data
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
     depends_on:
       postgres:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+
 
   outbox-worker:
     build:
@@ -106,7 +135,11 @@ services:
       OUTBOX_WORKER_RETRY_MAX_SECONDS: ${OUTBOX_WORKER_RETRY_MAX_SECONDS:-900}
       OUTBOX_WORKER_LEASE_SECONDS: ${OUTBOX_WORKER_LEASE_SECONDS:-300}
 
-    volumes: !reset []
+    volumes:
+      - ai_storage:/data
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
     depends_on:
       postgres:
@@ -116,6 +149,28 @@ services:
 
     healthcheck:
       disable: true
+
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        BACKEND_API_BASE_URL: ${BACKEND_API_BASE_URL:-http://backend:8000}
+
+    environment:
+      NODE_ENV: production
+      BACKEND_API_BASE_URL: ${BACKEND_API_BASE_URL:-http://backend:8000}
+
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
+
+    depends_on:
+      backend:
+        condition: service_healthy
+
+    restart: unless-stopped
+
 
   notification-worker:
     profiles:
@@ -144,3 +199,7 @@ services:
 
     healthcheck:
       disable: true
+
+
+volumes:
+  ai_storage:
