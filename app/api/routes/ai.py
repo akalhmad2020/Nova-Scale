@@ -46,6 +46,7 @@ from app.ai.application.dependencies import (
     build_conversation_service,
     build_resolve_shipment_service,
 )
+from app.ai.application.runtime_exceptions import AIProviderUnavailableError
 from app.ai.application.services.agent_action_service import AgentActionService
 from app.ai.application.services.analyze_shipment import AnalyzeShipmentService
 from app.ai.application.services.answer_question import AnswerQuestionService
@@ -458,7 +459,10 @@ async def delete_conversation(
 async def run_agent(
     tenant_id: UUID,
     payload: AgentRequest,
-    runtime: Annotated[LangGraphAgentRuntime, Depends(get_agent_runtime)],
+    runtime: Annotated[
+        LangGraphAgentRuntime,
+        Depends(get_agent_runtime),
+    ],
     conversation_service: Annotated[
         ConversationService,
         Depends(get_conversation_service),
@@ -469,11 +473,16 @@ async def run_agent(
     ],
     membership: Annotated[
         Membership,
-        Depends(require_entitlement(Entitlements.AI_ASSISTANT)),
+        Depends(
+            require_entitlement(
+                Entitlements.AI_ASSISTANT,
+            )
+        ),
     ],
 ) -> AgentResponse:
     requested_continuation = _continuation_from_request(payload.continuation)
     continuation = requested_continuation
+
     conversation_context: ConversationContext | None = None
     persistent_conversation_id = payload.conversation_id
 
@@ -499,6 +508,7 @@ async def run_agent(
                 conversation_id=persistent_conversation_id,
                 question=payload.question,
             )
+
             conversation_context = prepared_turn.conversation_context
 
             if "continuation" in payload.model_fields_set:
@@ -508,10 +518,11 @@ async def run_agent(
                 ):
                     raise HTTPException(
                         status_code=status.HTTP_409_CONFLICT,
-                        detail="Continuation does not match conversation state",
+                        detail=("Continuation does not match conversation state"),
                     )
             else:
                 continuation = prepared_turn.continuation
+
         elif payload.conversation_context is not None:
             conversation_context = ConversationContext(
                 messages=tuple(
@@ -536,8 +547,9 @@ async def run_agent(
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=(
-                        "AI write actions require a persistent conversation "
-                        "so confirmation can be recorded safely"
+                        "AI write actions require a persistent "
+                        "conversation so confirmation can be "
+                        "recorded safely"
                     ),
                 )
 
@@ -556,26 +568,43 @@ async def run_agent(
                 answer=result.answer,
                 continuation=result.continuation,
             )
+
     except PendingAgentActionExistsError as exc:
         await conversation_service.rollback()
+
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Conversation already has a pending AI action",
+            detail=("Conversation already has a pending AI action"),
         ) from exc
+
     except ConversationNotFoundError as exc:
         await conversation_service.rollback()
+
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Conversation not found",
         ) from exc
+
+    except AIProviderUnavailableError as exc:
+        if persistent_conversation_id is not None:
+            await conversation_service.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=("NovaScale AI is temporarily unavailable. Please try again."),
+        ) from exc
+
     except Exception:
         if persistent_conversation_id is not None:
             await conversation_service.rollback()
+
         raise
 
     return AgentResponse(
         answer=result.answer,
-        continuation=_continuation_response(result.continuation),
+        continuation=_continuation_response(
+            result.continuation,
+        ),
     )
 
 

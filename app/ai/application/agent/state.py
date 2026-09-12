@@ -39,5 +39,6 @@ class AgentState(TypedDict):
 
     authorization_denied: bool
     shipment_resolution_ambiguous: bool
+    shipment_resolution_not_found: bool
 
     answer: str

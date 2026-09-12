@@ -16,6 +16,7 @@ from app.ai.application.agent.shipment_resolution_exceptions import (
     ShipmentIdentifierAmbiguousError,
 )
 from app.ai.application.agent.shipment_resolution_models import ResolvedShipment
+from app.ai.application.runtime_exceptions import AIProviderUnavailableError
 from app.ai.application.services.answer_question import AnswerQuestionService
 from app.ai.domain.rag_models import (
     DocumentChunk,
@@ -105,6 +106,25 @@ class FakeAgentRuntime:
         return AgentExecutionResult(
             answer="fake agent response",
         )
+
+
+class UnavailableAgentRuntime:
+    async def execute_with_context(
+        self,
+        *,
+        tenant_id: UUID,
+        role_id: UUID,
+        question: str,
+        continuation: object | None = None,
+        conversation_context: ConversationContext | None = None,
+    ) -> AgentExecutionResult:
+        del tenant_id
+        del role_id
+        del question
+        del continuation
+        del conversation_context
+
+        raise AIProviderUnavailableError("Ollama is temporarily unavailable")
 
 
 FAKE_AGENT_RUNTIME = FakeAgentRuntime()
@@ -555,5 +575,28 @@ def test_agent_endpoint_rejects_empty_conversation_message_content() -> None:
 
         assert response.status_code == 422
         assert FAKE_AGENT_RUNTIME.calls == []
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_agent_endpoint_returns_service_unavailable_when_ai_provider_is_down() -> None:
+    configure_dependency_overrides()
+
+    app.dependency_overrides[get_agent_runtime] = lambda: UnavailableAgentRuntime()
+
+    try:
+        client = TestClient(app)
+
+        response = client.post(
+            f"/api/v1/ai/tenants/{TENANT_ID}/agent",
+            json={
+                "question": "Where is shipment SHIP-001?",
+            },
+        )
+
+        assert response.status_code == 503
+        assert response.json() == {
+            "detail": ("NovaScale AI is temporarily unavailable. Please try again.")
+        }
     finally:
         app.dependency_overrides.clear()

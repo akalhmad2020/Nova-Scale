@@ -29,9 +29,6 @@ from app.modules.locations.domain.enums import (
     LocationType,
 )
 from app.modules.locations.infrastructure.models.location import Location
-from app.modules.shipments.application.exceptions import (
-    ShipmentNotFoundError,
-)
 from app.modules.shipments.domain.enums import (
     ServiceType,
     ShipmentStatus,
@@ -234,7 +231,6 @@ async def test_agent_gets_real_shipment_with_real_llm(
 
 
 @pytest.mark.integration
-@pytest.mark.external_ai
 @pytest.mark.asyncio
 async def test_agent_cannot_access_shipment_from_another_tenant(
     db_session: AsyncSession,
@@ -312,7 +308,7 @@ async def test_agent_cannot_access_shipment_from_another_tenant(
         origin_location_id=origin.id,
         destination_location_id=destination.id,
         tracking_number=f"AGENT-ISOLATION-{unique}",
-        reference="AGENT-ISOLATION-REF",
+        reference=f"AGENT-ISOLATION-REF-{unique}",
         status=ShipmentStatus.IN_TRANSIT,
         service_type=ServiceType.EXPRESS,
         description="Agent tenant isolation shipment",
@@ -338,6 +334,14 @@ async def test_agent_cannot_access_shipment_from_another_tenant(
         session=db_session,
     )
 
+    planner = FakeAgentPlanner()
+    planner.decision = AgentDecision(
+        route="get_shipment",
+        shipment_identifier=shipment.tracking_number,
+    )
+
+    runtime._agent_planner = planner
+
     await set_session_tenant_context(
         db_session,
         foreign_tenant.id,
@@ -347,19 +351,36 @@ async def test_agent_cannot_access_shipment_from_another_tenant(
         foreign_tenant.id,
     )
 
+    question = f"Look up shipment {shipment.tracking_number} and tell me its current status."
+
     try:
-        with pytest.raises(ShipmentNotFoundError):
-            await runtime.execute(
-                tenant_id=foreign_tenant.id,
-                role_id=role_id,
-                question=(
-                    f"Look up shipment with UUID {shipment.id} and tell me its current status."
-                ),
-            )
+        answer = await runtime.execute(
+            tenant_id=foreign_tenant.id,
+            role_id=role_id,
+            question=question,
+        )
     finally:
         reset_current_tenant_id(
             tenant_context_token,
         )
+
+    assert planner.questions == [
+        question,
+    ]
+
+    normalized_answer = answer.lower()
+
+    assert "couldn't find a shipment matching" in normalized_answer
+    assert "active workspace" in normalized_answer
+
+    # Echoing the identifier supplied by the user is expected.
+    assert shipment.tracking_number.lower() in normalized_answer
+
+    # Data belonging to the other tenant must not leak.
+    assert str(shipment.id).lower() not in normalized_answer
+
+    assert shipment.reference is not None
+    assert shipment.reference.lower() not in normalized_answer
 
 
 @pytest.mark.integration

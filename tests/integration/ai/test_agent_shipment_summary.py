@@ -55,7 +55,6 @@ from app.modules.shipment_events.infrastructure.models.shipment_event import (
 from app.modules.shipments.api.dependencies import (
     get_get_shipment_use_case,
 )
-from app.modules.shipments.application.exceptions import ShipmentNotFoundError
 from app.modules.shipments.domain.enums import (
     ServiceType,
     ShipmentStatus,
@@ -492,15 +491,21 @@ async def test_agent_shipment_summary_respects_tenant_isolation(
     )
 
     try:
-        with pytest.raises(ShipmentNotFoundError):
-            await runtime.execute(
-                tenant_id=foreign_tenant.id,
-                role_id=TEST_ROLE_ID,
-                question=question,
-            )
+        result = await runtime.execute(
+            tenant_id=foreign_tenant.id,
+            role_id=TEST_ROLE_ID,
+            question=question,
+        )
     finally:
         reset_current_tenant_id(
             tenant_context_token,
         )
 
-    assert llm_provider.requests == []
+    assert result == (
+        f"I couldn't find a shipment matching "
+        f"'{shipment.tracking_number}' in the active workspace. "
+        "Please check the tracking number, shipment UUID, "
+        "or reference and try again."
+    )
+
+    assert len(llm_provider.requests) == 0

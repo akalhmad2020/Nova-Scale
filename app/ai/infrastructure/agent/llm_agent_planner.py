@@ -34,7 +34,8 @@ class LLMAgentPlanner:
             prompt=planner_prompt,
             system_prompt=self._build_system_prompt(),
             temperature=0.0,
-            max_tokens=256,
+            max_tokens=96,
+            context_window=2048,
         )
 
         payload = self._parse_payload(response.content)

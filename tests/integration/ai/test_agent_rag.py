@@ -5,6 +5,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.core.database  # noqa: F401
+from app.ai.application.agent.decision import AgentDecision
 from app.ai.application.dependencies import build_agent_runtime
 from app.ai.application.services.chunk_text import ChunkTextService
 from app.ai.application.services.embed_document import EmbedDocumentService
@@ -18,12 +19,19 @@ from app.core.tenant_context import (
     reset_current_tenant_id,
     set_current_tenant_id,
 )
+from app.modules.identity.api.dependencies import (
+    get_check_permission_use_case,
+)
+from app.modules.identity.application.use_cases.check_permission import (
+    CheckPermissionQuery,
+)
 from app.modules.identity.domain.permissions import Permissions
 from app.modules.identity.infrastructure.models.permission import Permission
 from app.modules.identity.infrastructure.models.role import Role
 from app.modules.identity.infrastructure.models.role_permission import (
     RolePermission,
 )
+from tests.unit.ai.fakes import FakeAgentPlanner
 
 
 async def set_session_tenant_context(
@@ -100,6 +108,17 @@ async def test_agent_answers_from_real_rag_context(
         permission_code=Permissions.DOCUMENT_READ,
     )
 
+    await db_session.commit()
+
+    check_permission = get_check_permission_use_case()
+
+    await check_permission.execute(
+        CheckPermissionQuery(
+            role_id=role_id,
+            permission_code=Permissions.DOCUMENT_READ,
+        )
+    )
+
     embedding_provider = build_embedding_provider(settings)
 
     vector_store = PostgresVectorStore(
@@ -142,6 +161,13 @@ async def test_agent_answers_from_real_rag_context(
         session=db_session,
     )
 
+    planner = FakeAgentPlanner()
+    planner.decision = AgentDecision(
+        route="retrieve_context",
+    )
+
+    runtime._agent_planner = planner
+
     await set_session_tenant_context(
         db_session,
         tenant_id,
@@ -151,19 +177,25 @@ async def test_agent_answers_from_real_rag_context(
         tenant_id,
     )
 
+    question = (
+        "According to our tenant shipping documents, "
+        "within how many hours must damaged cargo be reported?"
+    )
+
     try:
         answer = await runtime.execute(
             tenant_id=tenant_id,
             role_id=role_id,
-            question=(
-                "According to our tenant shipping documents, "
-                "within how many hours must damaged cargo be reported?"
-            ),
+            question=question,
         )
     finally:
         reset_current_tenant_id(
             tenant_context_token,
         )
+
+    assert planner.questions == [
+        question,
+    ]
 
     assert answer.strip()
 
@@ -229,6 +261,13 @@ async def test_agent_rag_cannot_retrieve_context_from_another_tenant(
         session=db_session,
     )
 
+    planner = FakeAgentPlanner()
+    planner.decision = AgentDecision(
+        route="retrieve_context",
+    )
+
+    runtime._agent_planner = planner
+
     await set_session_tenant_context(
         db_session,
         foreign_tenant_id,
@@ -238,19 +277,24 @@ async def test_agent_rag_cannot_retrieve_context_from_another_tenant(
         foreign_tenant_id,
     )
 
+    question = (
+        "According to our tenant documents, within how many hours must damaged cargo be reported?"
+    )
+
     try:
         answer = await runtime.execute(
             tenant_id=foreign_tenant_id,
             role_id=role_id,
-            question=(
-                "According to our tenant documents, "
-                "within how many hours must damaged cargo be reported?"
-            ),
+            question=question,
         )
     finally:
         reset_current_tenant_id(
             tenant_context_token,
         )
+
+    assert planner.questions == [
+        question,
+    ]
 
     assert answer.strip()
 

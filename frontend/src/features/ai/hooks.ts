@@ -19,6 +19,11 @@ import type {
   AgentResponse,
 } from "@/features/ai/types";
 import { useActiveTenantId } from "@/features/tenants/active-hooks";
+import {
+  canRunTenantScopedQuery,
+  getResolvedActiveTenantId,
+  requireActiveTenantId,
+} from "@/features/tenants/query-state";
 
 const conversationKeys = {
   all: (tenantId: string) =>
@@ -118,14 +123,19 @@ export function useCancelAgentAction() {
 
 export function useAIConversations() {
   const activeTenantIdQuery = useActiveTenantId();
-  const tenantId = readyTenantId(activeTenantIdQuery);
+  const tenantId = getResolvedActiveTenantId(
+    activeTenantIdQuery,
+  );
 
   return useQuery({
     queryKey: tenantId
       ? conversationKeys.all(tenantId)
       : ["ai", "conversations", "inactive"],
-    queryFn: listConversations,
-    enabled: Boolean(tenantId),
+    queryFn: () => {
+      requireActiveTenantId(activeTenantIdQuery);
+      return listConversations();
+    },
+    enabled: canRunTenantScopedQuery(activeTenantIdQuery),
     retry: false,
   });
 }
@@ -134,7 +144,9 @@ export function useAIConversation(
   conversationId: string | null,
 ) {
   const activeTenantIdQuery = useActiveTenantId();
-  const tenantId = readyTenantId(activeTenantIdQuery);
+  const tenantId = getResolvedActiveTenantId(
+    activeTenantIdQuery,
+  );
 
   return useQuery({
     queryKey:
@@ -145,13 +157,17 @@ export function useAIConversation(
           )
         : ["ai", "conversations", "inactive", "none"],
     queryFn: () => {
+      requireActiveTenantId(activeTenantIdQuery);
+
       if (!conversationId) {
         throw new Error("Conversation id is required");
       }
 
       return getConversation(conversationId);
     },
-    enabled: Boolean(tenantId && conversationId),
+    enabled:
+      Boolean(conversationId) &&
+      canRunTenantScopedQuery(activeTenantIdQuery),
     retry: false,
   });
 }
@@ -194,14 +210,4 @@ export function useDeleteAIConversation() {
       });
     },
   });
-}
-
-function readyTenantId(
-  query: ReturnType<typeof useActiveTenantId>,
-): string | null {
-  if (!query.isSuccess || query.isFetching || !query.data) {
-    return null;
-  }
-
-  return query.data;
 }
