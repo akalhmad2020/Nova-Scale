@@ -53,3 +53,9 @@ class SQLAlchemySubscriptionUnitOfWork:
         if self._session is None:
             raise RuntimeError("Unit of work is not active")
         await self._session.rollback()
+
+    async def refresh(self, instance: object) -> None:
+        if self._session is None:
+            raise RuntimeError("Unit of work is not active")
+
+        await self._session.refresh(instance)

@@ -50,6 +50,9 @@ class FakeSubscriptionUnitOfWork:
     async def commit(self) -> None:
         self.commits += 1
 
+    async def refresh(self, instance: object) -> None:
+        return None
+
     async def rollback(self) -> None:
         return None
 

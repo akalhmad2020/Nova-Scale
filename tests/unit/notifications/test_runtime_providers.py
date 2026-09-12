@@ -21,6 +21,14 @@ from app.modules.notifications.infrastructure.providers.webhook import (
 
 TEST_JWT_SECRET = "test-secret-for-novascale-at-least-32-characters"
 
+PRODUCTION_DATABASE_URL = (
+    "postgresql+asyncpg://novascale_app:runtime-production-password-7f3c9e@db:5432/novascale"
+)
+
+PRODUCTION_MIGRATION_DATABASE_URL = (
+    "postgresql+asyncpg://novascale_migrator:migration-production-password-4b8d2a@db:5432/novascale"
+)
+
 
 def make_settings(
     app_env: str,
@@ -38,6 +46,8 @@ def make_settings(
                 "docs_enabled": False,
                 "allowed_hosts": ["api.novascale.example"],
                 "hsts_enabled": True,
+                "database_url": PRODUCTION_DATABASE_URL,
+                "migration_database_url": PRODUCTION_MIGRATION_DATABASE_URL,
             }
         )
 

@@ -4,6 +4,16 @@ from fastapi.testclient import TestClient
 from app.core.config import Settings
 from app.main import create_app
 
+PRODUCTION_DATABASE_URL = (
+    "postgresql+asyncpg://novascale_app:runtime-production-password-7f3c9e@db:5432/novascale"
+)
+
+PRODUCTION_MIGRATION_DATABASE_URL = (
+    "postgresql+asyncpg://novascale_migrator:migration-production-password-4b8d2a@db:5432/novascale"
+)
+
+PRODUCTION_JWT_SECRET = "a-strong-production-secret-with-more-than-32-characters"
+
 
 def test_create_app_enables_docs_when_configured(
     monkeypatch: pytest.MonkeyPatch,
@@ -33,7 +43,9 @@ def test_create_app_disables_docs_when_configured(
         allowed_hosts=["api.novascale.example"],
         cors_allowed_origins=[],
         hsts_enabled=True,
-        auth_jwt_secret=("a-strong-production-secret-with-more-than-32-characters"),
+        auth_jwt_secret=PRODUCTION_JWT_SECRET,
+        database_url=PRODUCTION_DATABASE_URL,
+        migration_database_url=PRODUCTION_MIGRATION_DATABASE_URL,
     )
     monkeypatch.setattr("app.main.get_settings", lambda: settings)
 
@@ -135,7 +147,7 @@ def test_app_allows_configured_cors_origin_without_credentials(
         )
 
     assert response.status_code == 200
-    assert response.headers["access-control-allow-origin"] == "https://app.novascale.example"
+    assert response.headers["access-control-allow-origin"] == ("https://app.novascale.example")
     assert "access-control-allow-credentials" not in response.headers
 
 
@@ -194,7 +206,9 @@ def test_app_adds_hsts_when_enabled(
         allowed_hosts=["testserver"],
         cors_allowed_origins=[],
         hsts_enabled=True,
-        auth_jwt_secret=("a-strong-production-secret-with-more-than-32-characters"),
+        auth_jwt_secret=PRODUCTION_JWT_SECRET,
+        database_url=PRODUCTION_DATABASE_URL,
+        migration_database_url=PRODUCTION_MIGRATION_DATABASE_URL,
     )
     monkeypatch.setattr("app.main.get_settings", lambda: settings)
 

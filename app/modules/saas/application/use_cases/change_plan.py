@@ -64,4 +64,5 @@ class ChangePlan:
             subscription.provider_subscription_id = activation.provider_subscription_id
 
             await uow.commit()
+            await uow.refresh(subscription)
             return subscription
